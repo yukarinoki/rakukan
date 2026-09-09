@@ -172,11 +172,11 @@
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Grid.Column="0" Spacing="8">
-                                        <TextBlock Text="フォントサイズ px (10-72)" />
+                                        <TextBlock Text="フォントサイズ (10-72)" />
                                         <NumberBox x:Name="CandidateFontHeightBox" SmallChange="1" Minimum="10" Maximum="72" SpinButtonPlacementMode="Inline" />
                                     </StackPanel>
                                     <StackPanel Grid.Column="1" Spacing="8" VerticalAlignment="Bottom">
-                                        <TextBlock Opacity="0.7" TextWrapping="Wrap" Text="行間や余白も同じ比率で拡大されます。次回の候補表示から反映。" />
+                                        <TextBlock Opacity="0.7" TextWrapping="Wrap" Text="100% 表示時のサイズです。Windows の拡大率に合わせて文字・行間・余白を拡大します。次回の候補表示から反映。" />
                                     </StackPanel>
                                 </Grid>
                             </StackPanel>

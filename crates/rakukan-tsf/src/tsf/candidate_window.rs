@@ -31,16 +31,18 @@ use windows::{
             BACKGROUND_MODE, BeginPaint, CreateCompatibleDC, CreateFontW, CreateSolidBrush,
             DeleteDC, DeleteObject, EndPaint, FillRect, GetDC, GetMonitorInfoW,
             GetTextExtentPoint32W, HDC, InvalidateRect, MONITOR_DEFAULTTONEAREST, MONITORINFO,
-            MonitorFromPoint, PAINTSTRUCT, ReleaseDC, SelectObject, SetBkMode, SetTextColor,
-            TextOutW,
+            MonitorFromPoint, MonitorFromWindow, PAINTSTRUCT, ReleaseDC, SelectObject, SetBkMode,
+            SetTextColor, TextOutW,
         },
         System::LibraryLoader::GetModuleHandleW,
         UI::{
+            HiDpi::GetDpiForWindow,
             TextServices::ITfThreadMgr,
             WindowsAndMessaging::{
-                CreateWindowExW, DefWindowProcW, DestroyWindow, HMENU, HWND_TOPMOST, KillTimer,
-                PostMessageW, RegisterClassW, SW_HIDE, SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SetTimer,
-                SetWindowPos, ShowWindow, WM_APP, WM_ERASEBKGND, WM_PAINT, WM_TIMER, WNDCLASSW,
+                CreateWindowExW, DefWindowProcW, DestroyWindow, GetWindowRect, HMENU, HWND_TOPMOST,
+                IsWindowVisible, KillTimer, PostMessageW, RegisterClassW, SW_HIDE,
+                SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOREDRAW, SetTimer, SetWindowPos,
+                ShowWindow, WM_APP, WM_DPICHANGED, WM_ERASEBKGND, WM_PAINT, WM_TIMER, WNDCLASSW,
                 WS_BORDER, WS_EX_NOACTIVATE, WS_EX_TOPMOST, WS_POPUP,
             },
         },
@@ -50,7 +52,7 @@ use windows::{
 
 // ─── レイアウト定数 ───────────────────────────────────────────────────────────
 
-// 以下の *_BASE は「フォント高さ 17px のとき」の寸法。
+// 以下の *_BASE は「96 DPI でフォント高さ 17px のとき」の寸法。
 // config.toml の [appearance] candidate_font_height を変えると、
 // scaled() が同じ比率で全ての寸法を拡大縮小する。
 // 幅は compute_needed_width が実フォントで実測するため、ここでは下限/上限のみ。
@@ -76,6 +78,22 @@ const FONT_HEIGHT_MIN: i32 = 9;
 #[inline]
 fn configured_font_height() -> i32 {
     crate::engine::config::candidate_font_height()
+}
+
+/// 設定は 96 DPI 基準の論理 px。DPI unaware の HWND は Windows が拡大するので
+/// GetDpiForWindow が返す 96 を使い、二重拡大を避ける。
+fn font_height_at_dpi(logical_height: i32, dpi: u32) -> i32 {
+    let dpi = if dpi == 0 { 96 } else { dpi };
+    ((i64::from(logical_height) * i64::from(dpi) + 48) / 96) as i32
+}
+
+/// SetWindowPos が同期送信する WM_DPICHANGED からの再レイアウトを防ぐ。
+struct LayoutUpdate;
+
+impl Drop for LayoutUpdate {
+    fn drop(&mut self) {
+        TL_LAYOUT_UPDATING.with(|c| c.set(false));
+    }
 }
 
 /// FONT_HEIGHT_BASE 基準の寸法を、指定のフォント高さに合わせて拡大する（四捨五入）。
@@ -162,6 +180,8 @@ thread_local! {
     static TL_WIN_WIDTH: Cell<i32> = Cell::new(Layout::with_font_height(configured_font_height()).win_width_min);
     /// 表示中ウィンドウのレイアウト寸法。`show_with_status()` の開始時にのみ更新する。
     static TL_LAYOUT: Cell<Layout> = Cell::new(Layout::with_font_height(configured_font_height()));
+    static TL_LAYOUT_UPDATING: Cell<bool> = const { Cell::new(false) };
+    static TL_ANCHOR: Cell<(i32, i32)> = const { Cell::new((0, 0)) };
 
     // ─── [Live] ライブ変換セッション状態は `live_session.rs` の LiveConvSession に集約 (M4 Phase 1)。
     // 旧 TL_LIVE_CTX / TL_LIVE_TID / TL_LIVE_DM_PTR は削除済み。
@@ -206,6 +226,7 @@ const WM_APP_FOCUS_CHANGED: u32 = WM_APP + 1;
 /// KEYBOARD_OPENCLOSE コンパートメントが外部（アプリの ImmSetOpenStatus /
 /// CtfImm）から変えられたときの遅延処理
 const WM_APP_OPENCLOSE_CHANGED: u32 = WM_APP + 2;
+const WM_APP_DPI_CHANGED: u32 = WM_APP + 3;
 
 #[derive(Default, Clone)]
 struct CandData {
@@ -276,6 +297,37 @@ unsafe extern "system" fn wnd_proc(
     lparam: LPARAM,
 ) -> LRESULT {
     match msg {
+        WM_DPICHANGED => {
+            // 自分でモニターへ移動中なら、show_with_status が直後に新 DPI を読む。
+            if !TL_LAYOUT_UPDATING.with(|c| c.get()) && lparam.0 != 0 {
+                let suggested = *(lparam.0 as *const RECT);
+                let mut old = RECT::default();
+                if GetWindowRect(hwnd, &mut old).is_ok() {
+                    TL_ANCHOR.with(|c| {
+                        let (x, y) = c.get();
+                        c.set((x + suggested.left - old.left, y + suggested.top - old.top));
+                    });
+                }
+                let _ = SetWindowPos(
+                    hwnd,
+                    HWND_TOPMOST,
+                    suggested.left,
+                    suggested.top,
+                    suggested.right - suggested.left,
+                    suggested.bottom - suggested.top,
+                    SWP_NOACTIVATE,
+                );
+                let _ = PostMessageW(hwnd, WM_APP_DPI_CHANGED, WPARAM(0), LPARAM(0));
+            }
+            LRESULT(0)
+        }
+        WM_APP_DPI_CHANGED => {
+            if IsWindowVisible(hwnd).as_bool() {
+                let (x, y) = TL_ANCHOR.with(|c| c.get());
+                reposition(x, y);
+            }
+            LRESULT(0)
+        }
         WM_PAINT => {
             let mut ps = PAINTSTRUCT::default();
             let hdc = BeginPaint(hwnd, &mut ps);
@@ -370,7 +422,7 @@ unsafe fn compute_needed_width(
                         if c.is_ascii() { (a + 1, o) } else { (a, o + 1) }
                     },
                 );
-            ascii * 9 + other * 18
+            scaled_to(ascii * 9 + other * 18, lay.font_height)
         }
     };
 
@@ -612,8 +664,9 @@ unsafe fn fit_layout_to_work_area(
     n: usize,
     has_pager: bool,
     has_status: bool,
+    dpi: u32,
 ) -> Layout {
-    let configured = configured_font_height();
+    let configured = font_height_at_dpi(configured_font_height(), dpi);
     let lay = Layout::with_font_height(configured);
 
     let pt = POINT { x, y: caret_bottom };
@@ -670,6 +723,34 @@ pub fn show_with_status(
         return;
     }
 
+    if TL_LAYOUT_UPDATING.with(|c| c.replace(true)) {
+        return;
+    }
+    let _update = LayoutUpdate;
+    let hwnd = ensure_hwnd();
+    if !is_valid(hwnd) {
+        return;
+    }
+    TL_ANCHOR.with(|c| c.set((x, y)));
+    // HWND はタイマー用に別モニターで作られていることがある。先に対象へ移し、
+    // HWND の awareness に対応した DPI を取得する。プロセスの awareness は変更しない。
+    let dpi = unsafe {
+        let target = MonitorFromPoint(POINT { x, y }, MONITOR_DEFAULTTONEAREST);
+        if MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST) != target {
+            // 旧ウィンドウの大きさでモニター判定が引き戻されないよう一旦 1x1 にする。
+            let _ = SetWindowPos(
+                hwnd,
+                HWND_TOPMOST,
+                x,
+                y,
+                1,
+                1,
+                SWP_NOACTIVATE | SWP_NOREDRAW,
+            );
+        }
+        GetDpiForWindow(hwnd)
+    };
+
     let has_pager = !page_info.is_empty();
     let has_status = status_line.is_some();
 
@@ -693,7 +774,7 @@ pub fn show_with_status(
     // ここでレイアウトを 1 回だけ確定させ、以降の描画・幅計測・再配置は
     // すべてこのスナップショットを使う。表示中に設定が変わっても寸法は
     // 混ざらず、新しい設定は次回の show_with_status() から効く。
-    let lay = unsafe { fit_layout_to_work_area(x, y, n, has_pager, has_status) };
+    let lay = unsafe { fit_layout_to_work_area(x, y, n, has_pager, has_status, dpi) };
     TL_LAYOUT.with(|c| c.set(lay));
 
     let win_h = lay.window_height(n, has_pager, has_status);
@@ -708,48 +789,18 @@ pub fn show_with_status(
     let win_y = unsafe { calc_window_y(x, y, win_h) };
     let win_x = unsafe { calc_window_x(x, y, win_width) };
 
-    let hwnd = get_hwnd();
-
-    if is_valid(hwnd) {
-        unsafe {
-            let _ = SetWindowPos(
-                hwnd,
-                HWND_TOPMOST,
-                win_x,
-                win_y,
-                win_width,
-                win_h,
-                SWP_NOACTIVATE,
-            );
-            let _ = InvalidateRect(hwnd, None, BOOL(0));
-            let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
-        }
-    } else {
-        unsafe {
-            ensure_class_registered();
-            let hmod = GetModuleHandleW(PCWSTR::null()).unwrap_or_default();
-            match CreateWindowExW(
-                WS_EX_TOPMOST | WS_EX_NOACTIVATE,
-                PCWSTR(CLASS_NAME_UTF16.as_ptr()),
-                PCWSTR::null(),
-                WS_POPUP | WS_BORDER,
-                win_x,
-                win_y,
-                win_width,
-                win_h,
-                HWND::default(),
-                HMENU::default(),
-                hmod,
-                None,
-            ) {
-                Ok(new_hwnd) if is_valid(new_hwnd) => {
-                    set_hwnd(new_hwnd);
-                    let _ = ShowWindow(new_hwnd, SW_SHOWNOACTIVATE);
-                    tracing::debug!("candwin::create: hwnd={:?}", new_hwnd);
-                }
-                Ok(_) | Err(_) => tracing::warn!("candwin::create: failed"),
-            }
-        }
+    unsafe {
+        let _ = SetWindowPos(
+            hwnd,
+            HWND_TOPMOST,
+            win_x,
+            win_y,
+            win_width,
+            win_h,
+            SWP_NOACTIVATE,
+        );
+        let _ = InvalidateRect(hwnd, None, BOOL(0));
+        let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
     }
 }
 
@@ -788,38 +839,20 @@ unsafe fn calc_window_y(x: i32, caret_bottom: i32, win_h: i32) -> i32 {
 /// BlockSelecting でブロックを確定した際に、候補ウィンドウを次ブロックの
 /// 直下へ追従させるために使用する。ウィンドウが非表示の場合は何もしない。
 pub fn reposition(x: i32, y: i32) {
-    // 表示中の寸法を変えないため、設定ではなくスナップショットを使う
-    let lay = layout();
     let hwnd = get_hwnd();
-    if !is_valid(hwnd) {
+    if !is_valid(hwnd) || !unsafe { IsWindowVisible(hwnd).as_bool() } {
         return;
     }
-    let (n, has_pager, has_status) = TL_CAND.with(|c| {
-        let d = c.borrow();
-        (
-            d.candidates.len(),
-            !d.page_info.is_empty(),
-            d.status_line.is_some(),
-        )
-    });
-    if n == 0 {
-        return;
-    }
-    let win_h = lay.window_height(n, has_pager, has_status);
-    let win_w = TL_WIN_WIDTH.with(|c| c.get());
-    let win_y = unsafe { calc_window_y(x, y, win_h) };
-    let win_x = unsafe { calc_window_x(x, y, win_w) };
-    unsafe {
-        let _ = SetWindowPos(
-            hwnd,
-            HWND_TOPMOST,
-            win_x,
-            win_y,
-            win_w,
-            win_h,
-            SWP_NOACTIVATE,
-        );
-    }
+    // モニターが変わると DPI と作業領域も変わるので、幅計測を含めて作り直す。
+    let data = TL_CAND.with(|c| c.borrow().clone());
+    show_with_status(
+        &data.candidates,
+        data.selected,
+        &data.page_info,
+        x,
+        y,
+        data.status_line.as_deref(),
+    );
 }
 
 /// 選択インデックスとページ情報だけ更新して再描画する（位置は変えない）。
@@ -2083,6 +2116,139 @@ mod tests {
     use super::{
         FONT_HEIGHT_BASE, FONT_HEIGHT_MIN, Layout, fit_font_height, guard_preview_shrink, scaled_to,
     };
+
+    #[test]
+    fn dpi_scaling_preserves_readable_rows_and_work_area_fit() {
+        for (dpi, expected_height) in [(96, 17), (120, 21), (144, 26), (192, 34)] {
+            let height = super::font_height_at_dpi(17, dpi);
+            assert_eq!(height, expected_height);
+            let lay = Layout::with_font_height(height);
+            assert!(lay.item_height >= height + 8);
+            assert!(lay.status_height >= height);
+            assert!(lay.pager_height >= height);
+            let configured = super::font_height_at_dpi(72, dpi);
+            let fit = fit_font_height(configured, 1040, 9, true, true);
+            assert!(Layout::with_font_height(fit).window_height(9, true, true) <= 1040);
+        }
+        let double = Layout::with_font_height(super::font_height_at_dpi(17, 192));
+        assert_eq!(double.item_height, 52);
+        assert_eq!(double.padding_x, 20);
+        assert_eq!(double.win_width_min, 520);
+        assert_eq!(super::font_height_at_dpi(17, 0), 17);
+    }
+
+    /// 実際のデスクトップ上の HWND と GDI を使う。ウィンドウは非表示のまま。
+    #[test]
+    #[ignore = "requires a Windows desktop; run explicitly with --ignored --nocapture"]
+    fn candidate_dpi_desktop_regression() {
+        use super::*;
+        use windows::Win32::{
+            Graphics::Gdi::{EnumDisplayMonitors, GetTextMetricsW, HMONITOR, TEXTMETRICW},
+            UI::HiDpi::{
+                DPI_AWARENESS_CONTEXT, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
+                DPI_AWARENESS_CONTEXT_SYSTEM_AWARE, DPI_AWARENESS_CONTEXT_UNAWARE,
+                SetThreadDpiAwarenessContext,
+            },
+        };
+        struct RestoreAwareness(DPI_AWARENESS_CONTEXT);
+        impl Drop for RestoreAwareness {
+            fn drop(&mut self) {
+                super::destroy();
+                unsafe {
+                    SetThreadDpiAwarenessContext(self.0);
+                }
+            }
+        }
+        unsafe extern "system" fn collect(
+            _: HMONITOR,
+            _: HDC,
+            rect: *mut RECT,
+            data: LPARAM,
+        ) -> BOOL {
+            unsafe {
+                (*(data.0 as *mut Vec<RECT>)).push(*rect);
+            }
+            BOOL(1)
+        }
+        for awareness in [
+            DPI_AWARENESS_CONTEXT_UNAWARE,
+            DPI_AWARENESS_CONTEXT_SYSTEM_AWARE,
+            DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
+        ] {
+            unsafe {
+                let old = SetThreadDpiAwarenessContext(awareness);
+                assert!(!old.0.is_null());
+                let _restore = RestoreAwareness(old);
+                TL_LAYOUT_UPDATING.with(|c| c.set(true));
+                let _update = LayoutUpdate;
+                let hwnd = ensure_hwnd();
+                assert!(is_valid(hwnd));
+                let mut monitors = Vec::<RECT>::new();
+                assert!(
+                    EnumDisplayMonitors(
+                        HDC::default(),
+                        None,
+                        Some(collect),
+                        LPARAM(&mut monitors as *mut _ as isize)
+                    )
+                    .as_bool()
+                );
+                assert!(!monitors.is_empty());
+                for monitor in monitors {
+                    let x = (monitor.left + monitor.right) / 2;
+                    let y = (monitor.top + monitor.bottom) / 2;
+                    SetWindowPos(hwnd, HWND_TOPMOST, x, y, 1, 1, SWP_NOACTIVATE).unwrap();
+                    let dpi = GetDpiForWindow(hwnd);
+                    assert!(dpi >= 96);
+                    if awareness == DPI_AWARENESS_CONTEXT_UNAWARE {
+                        assert_eq!(dpi, 96);
+                    }
+                    let lay = fit_layout_to_work_area(x, y, 9, true, true, dpi);
+                    let width = compute_needed_width(
+                        &lay,
+                        &["径庭・日本語の候補".into()],
+                        Some("変換中"),
+                        "1/2",
+                    );
+                    assert!(width >= lay.win_width_min && width <= lay.win_width_max);
+                    let dc = GetDC(hwnd);
+                    let face: Vec<u16> = "Meiryo UI\0".encode_utf16().collect();
+                    let font = CreateFontW(
+                        lay.font_height,
+                        0,
+                        0,
+                        0,
+                        400,
+                        0,
+                        0,
+                        0,
+                        1,
+                        0,
+                        0,
+                        0,
+                        0,
+                        PCWSTR(face.as_ptr()),
+                    );
+                    assert!(!font.is_invalid());
+                    let old_font = SelectObject(dc, font);
+                    let mut metrics = TEXTMETRICW::default();
+                    let measured = GetTextMetricsW(dc, &mut metrics).as_bool();
+                    SelectObject(dc, old_font);
+                    let _ = DeleteObject(font);
+                    ReleaseDC(hwnd, dc);
+                    assert!(measured);
+                    assert!(metrics.tmHeight <= lay.item_height);
+                    assert!(metrics.tmHeight <= lay.status_height);
+                    assert!(metrics.tmHeight <= lay.pager_height);
+                    assert!(!IsWindowVisible(hwnd).as_bool());
+                    println!(
+                        "awareness={awareness:?} monitor={monitor:?} dpi={dpi} font={} row={} measured_font={}",
+                        lay.font_height, lay.item_height, metrics.tmHeight
+                    );
+                }
+            }
+        }
+    }
 
     /// 設定なし（＝既定の 17px）では、これまでの寸法と 1px も変わらないこと。
     #[test]

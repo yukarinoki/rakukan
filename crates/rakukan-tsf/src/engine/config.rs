@@ -30,7 +30,7 @@ pub struct AppConfig {
 
 /// 候補ウィンドウの見た目。
 ///
-/// `candidate_font_height` は候補ウィンドウのフォント高さ（ピクセル）。
+/// `candidate_font_height` は候補ウィンドウのフォント高さ（96 DPI 基準の論理ピクセル）。
 /// 行の高さ・余白・最小幅もこの値を基準に同じ比率で拡大されるため、
 /// ここだけ変えればウィンドウ全体が破綻せずに拡大縮小する。
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -395,7 +395,7 @@ const MAX_CANDIDATE_FONT_HEIGHT: i32 = 72;
 
 static CANDIDATE_FONT_HEIGHT: AtomicI32 = AtomicI32::new(DEFAULT_CANDIDATE_FONT_HEIGHT);
 
-/// 候補ウィンドウのフォント高さ（ピクセル）。描画パスから毎行呼ばれる想定でロックしない。
+/// 候補ウィンドウのフォント高さ（96 DPI 基準の論理ピクセル）。描画パスから毎行呼ばれる想定でロックしない。
 pub fn candidate_font_height() -> i32 {
     CANDIDATE_FONT_HEIGHT.load(Ordering::Relaxed)
 }
@@ -607,7 +607,7 @@ beam_size = 6
 # num_candidates = 6
 
 [appearance]
-# 候補ウィンドウのフォントサイズ（ピクセル）。既定 17
+# 候補ウィンドウのフォントサイズ（96 DPI 基準の論理ピクセル）。既定 17。Windows の拡大率に追従
 # 行の高さ・余白・最小幅も同じ比率で拡大するので、この値だけ変えればよい。
 # 10〜72 にクランプされる。次回の候補表示から反映。
 candidate_font_height = 17
