@@ -62,7 +62,7 @@ prefer_dictionary_first = true
 beam_size = 3
 
 [appearance]
-# 候補ウィンドウのフォントサイズ（ピクセル）。既定 17
+# 候補ウィンドウのフォントサイズ（96 DPI 基準の論理ピクセル）。既定 17。Windows の拡大率に追従
 # 行の高さ・余白・最小幅も同じ比率で拡大するので、この値だけ変えればよい。
 # 10〜72 にクランプされる。次回の候補表示から反映。
 candidate_font_height = 17
