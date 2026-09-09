@@ -2,8 +2,10 @@
 use std::{cell::RefCell, time::Instant};
 use windows::{
     Win32::{
-        Foundation::*, Graphics::Gdi::*, System::LibraryLoader::GetModuleHandleW,
-        UI::WindowsAndMessaging::*,
+        Foundation::*,
+        Graphics::Gdi::*,
+        System::LibraryLoader::GetModuleHandleW,
+        UI::{HiDpi::GetDpiForWindow, WindowsAndMessaging::*},
     },
     core::w,
 };
@@ -34,6 +36,10 @@ struct Surface {
 }
 thread_local! { static SURFACE: RefCell<Option<Surface>> = const { RefCell::new(None) }; }
 
+// Three logical pixels: keep the puddle close without touching the caret.
+fn caret_gap(dpi: u32) -> i32 {
+    ((3 * dpi.max(96) + 48) / 96) as i32
+}
 fn color(seconds: f32, busy: bool) -> COLORREF {
     // A gentle 1.6 second breath; no abrupt white flashes.
     let amount = if busy {
@@ -171,7 +177,7 @@ fn show_impl(view: View, visible: bool) {
             g.caret
         };
         if !view.replace {
-            anchor.left = g.caret.right;
+            anchor.left = g.caret.right + caret_gap(GetDpiForWindow(hwnd));
         }
         let preview = !view.editing && !view.busy;
         // TSF rectangles already use the host's coordinate space: do not apply DPI twice.
@@ -381,7 +387,10 @@ mod tests {
                 unsafe {
                     GetWindowRect(hwnd, &mut rect).unwrap();
                 }
-                assert_eq!(rect.left, geometry.caret.right);
+                assert_eq!(
+                    rect.left,
+                    geometry.caret.right + caret_gap(unsafe { GetDpiForWindow(hwnd) })
+                );
                 assert_eq!(rect.top, geometry.caret.top);
                 assert_eq!(rect.bottom - rect.top, height + 1);
                 let width = rect.right - rect.left;
