@@ -20,6 +20,10 @@ Check(!correction.Append && correction.Language == "english" && correction.Promp
 var different = AiBackend.Resolve(cfg, new() { Text = "元の文", Previous = "old", Instruction = "えいご", Append = false });
 Check(!different.Append && different.Prompt.Contains("old"), "Alternative retains transformation");
 Check(AiBackend.CleanOutput("<think>private reasoning</think> answer") == "answer", "Strip thinking");
+Check(AiBackend.CleanOutput("hidden reasoning</think> answer") == "answer", "Strip prefilled thinking without opening tag");
+var localCorrection = AiBackend.Resolve(new AiConfig { Backend = "local" }, new() { Text = "元の文", Previous = "Previous English", Instruction = "もっと短く", Append = false, Language = "english" });
+Check(localCorrection.Prompt.Contains("Previous English") && localCorrection.Prompt.Contains("in english") && !localCorrection.Append, "Local follow-up preserves previous result and output language");
+Check(!AiBackend.Resolve(new AiConfig { Backend = "local" }, new() { Text = "test", Instruction = "えいご" }).Prompt.Contains("/no_think"), "Local models use template thinking control instead of Qwen3 soft switch");
 Check(AiBackend.CleanOutput("<think>unfinished") == "", "Never expose unfinished thinking");
 Check(AiConfig.ValidKey("Henkan") && AiConfig.ValidKey("Ctrl+Shift+A") && !AiConfig.ValidKey("A") && !AiConfig.ValidKey("F13"), "AI shortcut validation");
 var clone = JsonSerializer.Deserialize<AiConfig>(JsonSerializer.Serialize(cfg, AiConfig.Json), AiConfig.Json)!;
@@ -82,4 +86,46 @@ async Task HttpCase(int status, bool cancel, bool continuationCase = false)
     finally { listener.Stop(); }
 }
 await HttpCase(200, false); await HttpCase(401, false); await HttpCase(200, true); await HttpCase(200, false, true);
+// Downloads must never publish incomplete/corrupt files, and retries reuse verified files.
+var downloadRoot = Path.Combine(Path.GetTempPath(), "rakukan-download-test-" + Guid.NewGuid().ToString("N"));
+Directory.CreateDirectory(downloadRoot);
+try
+{
+    var data = Encoding.UTF8.GetBytes("GGUF-test-payload");
+    var digest = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(data));
+    using var handler = new DownloadHandler(data);
+    using var http = new HttpClient(handler);
+    var destination = Path.Combine(downloadRoot, "model.gguf");
+    var url = new Uri("https://example.invalid/model");
+    await AiDownload.DownloadVerifiedAsync(http, url, destination, data.Length, digest, "test", null, default);
+    Check(File.ReadAllBytes(destination).SequenceEqual(data), "Verified download published");
+    await AiDownload.DownloadVerifiedAsync(http, url, destination, data.Length, digest, "test", null, default);
+    Check(handler.Requests == 1, "Verified existing model skips network");
+    await File.WriteAllTextAsync(destination, "existing model");
+    await Throws(() => AiDownload.DownloadVerifiedAsync(http, url, destination, data.Length, new string('0', 64), "test", null, default), "Bad SHA rejected");
+    Check(File.ReadAllText(destination) == "existing model" && !Directory.GetFiles(downloadRoot, "*.part").Any(), "Failure preserves existing model and removes partial download");
+    using var cancelled = new CancellationTokenSource(); cancelled.Cancel();
+    await Throws(() => AiDownload.DownloadVerifiedAsync(http, url, destination, data.Length, digest, "test", null, cancelled.Token), "Download cancellation honored");
+    handler.Data = data[..^1];
+    await Throws(() => AiDownload.DownloadVerifiedAsync(http, url, destination, data.Length, digest, "test", null, default), "Truncated download rejected");
+    var archive = Path.Combine(downloadRoot, "server.zip");
+    using (var zip = System.IO.Compression.ZipFile.Open(archive, System.IO.Compression.ZipArchiveMode.Create))
+    {
+        using var writer = new StreamWriter(zip.CreateEntry("../escaped.exe").Open()); writer.Write("invalid");
+    }
+    await Throws(() => AiDownload.ExtractServerAsync(archive, Path.Combine(downloadRoot, "extract"), default), "Zip traversal rejected");
+    Check(!File.Exists(Path.Combine(downloadRoot, "escaped.exe")), "Zip cannot escape staging directory");
+}
+finally { Directory.Delete(downloadRoot, true); }
 Console.WriteLine($"AI tests passed: {passed}");
+
+sealed class DownloadHandler(byte[] data) : HttpMessageHandler
+{
+    public byte[] Data = data;
+    public int Requests;
+    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested(); Requests++;
+        return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(Data) });
+    }
+}

@@ -31,6 +31,7 @@ public sealed partial class MainWindow : Window
         SetWindowIcon();
         ResizeToDefaultSize();
         AppWindow.Closing += AppWindow_Closing;
+        Closed += (_, _) => { _aiDownloadCancel?.Cancel(); _aiCancel?.Cancel(); };
 
         var ver = Assembly.GetEntryAssembly()?.GetName().Version;
         VersionText.Text = ver is { } v ? $"rakukan v{v.Major}.{v.Minor}.{v.Build}" : "rakukan";
