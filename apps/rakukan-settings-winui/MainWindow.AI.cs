@@ -11,6 +11,43 @@ public sealed partial class MainWindow
     private bool _aiSavingEnabled;
     private AiCommand? _aiCommand;
     private CancellationTokenSource? _aiCancel;
+    private CancellationTokenSource? _aiDownloadCancel;
+    private async void AiDownload_Click(object sender, RoutedEventArgs e)
+    {
+        if (_aiDownloadCancel != null) return;
+        _aiDownloadCancel = new();
+        AiDownloadButton.IsEnabled = false; AiDownloadCancelButton.IsEnabled = true;
+        AiDownloadProgress.Visibility = Visibility.Visible; AiDownloadProgress.IsIndeterminate = true;
+        AiDownloadStatus.Text = "ダウンロードを準備中…";
+        try
+        {
+            var progress = new Progress<AiDownloadProgress>(p =>
+            {
+                if (_aiDownloadCancel == null) return;
+                AiDownloadProgress.IsIndeterminate = p.Total == 0;
+                if (p.Total > 0) AiDownloadProgress.Value = 100.0 * p.Received / p.Total;
+                AiDownloadStatus.Text = p.Total > 1 ? $"{p.Stage}：{p.Received / 1_000_000.0:N1} / {p.Total / 1_000_000.0:N1} MB" : p.Stage;
+            });
+            var modelId = (AiDownloadModel.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "2b";
+            var files = await AiDownload.InstallAsync(progress, _aiDownloadCancel.Token, modelId);
+            AiServerPath.Text = files.ServerPath; AiModelPath.Text = files.ModelPath; AiModelName.Text = "";
+            AiBackendCombo.SelectedItem = AiBackendCombo.Items.OfType<ComboBoxItem>().First(i => i.Tag?.ToString() == "local");
+            var config = CaptureAiSettings(); config.Validate();
+            AiBackend.StopLocalIfDifferent(config); config.Save();
+            AiDownloadStatus.Text = "保存しました。軽量モデルを使えます。「起動・確認」で接続を確認できます。";
+        }
+        catch (Exception ex)
+        {
+            AiDownloadStatus.Text = ex is OperationCanceledException ? "ダウンロードを中止しました。もう一度押すと取得済みのファイルを確認して再試行します。" : "ダウンロードまたは設定保存に失敗しました：" + ex.Message;
+        }
+        finally
+        {
+            _aiDownloadCancel.Dispose(); _aiDownloadCancel = null;
+            AiDownloadButton.IsEnabled = true; AiDownloadCancelButton.IsEnabled = false;
+            AiDownloadProgress.Visibility = Visibility.Collapsed;
+        }
+    }
+    private void AiDownloadCancel_Click(object sender, RoutedEventArgs e) => _aiDownloadCancel?.Cancel();
     private void AiSection_Click(object sender, RoutedEventArgs e)
     {
         SelectAiSection((sender as FrameworkElement)?.Tag?.ToString());

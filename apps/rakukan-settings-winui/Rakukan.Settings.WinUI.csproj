@@ -20,6 +20,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="..\rakukan-ai\AiDownload.cs" Link="AI\AiDownload.cs" />
     <Compile Include="..\rakukan-ai\AiConfig.cs" Link="AI\AiConfig.cs" />
     <Compile Include="..\rakukan-ai\AiBackend.cs" Link="AI\AiBackend.cs" />
     <Compile Include="..\rakukan-ai\AiSecret.cs" Link="AI\AiSecret.cs" />
