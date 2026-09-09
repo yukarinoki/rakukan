@@ -15,6 +15,7 @@ pub(crate) struct Geometry {
     pub caret: RECT,
     pub lines: Vec<RECT>,
     pub viewport: RECT,
+    pub font: Option<LOGFONTW>,
 }
 #[derive(Clone)]
 pub(crate) struct View {
@@ -29,12 +30,17 @@ struct Surface {
     text: String,
     text_rect: RECT,
     font_height: i32,
+    preview: bool,
+    source_font: Option<LOGFONTW>,
     busy: bool,
     editing: bool,
     began: Instant,
     pool: RECT,
 }
-thread_local! { static SURFACE: RefCell<Option<Surface>> = const { RefCell::new(None) }; }
+thread_local! {
+    static SURFACE: RefCell<Option<Surface>> = const { RefCell::new(None) };
+    static INSTRUCTION: RefCell<Option<Surface>> = const { RefCell::new(None) };
+}
 
 // Three logical pixels: keep the puddle close without touching the caret.
 fn caret_gap(dpi: u32) -> i32 {
@@ -50,9 +56,57 @@ fn color(seconds: f32, busy: bool) -> COLORREF {
     let mix = |base: f32| (base + (255.0 - base) * amount) as u32;
     COLORREF(mix(59.0) | (mix(130.0) << 8) | (mix(246.0) << 16))
 }
-unsafe fn font(height: i32) -> HFONT {
+pub(crate) fn source_font() -> Option<LOGFONTW> {
+    unsafe {
+        let mut info = GUITHREADINFO {
+            cbSize: std::mem::size_of::<GUITHREADINFO>() as u32,
+            ..Default::default()
+        };
+        GetGUIThreadInfo(
+            windows::Win32::System::Threading::GetCurrentThreadId(),
+            &mut info,
+        )
+        .ok()?;
+        let hwnd = if info.hwndCaret.0.is_null() {
+            info.hwndFocus
+        } else {
+            info.hwndCaret
+        };
+        if hwnd.0.is_null() {
+            return None;
+        }
+        let mut result = 0usize;
+        SendMessageTimeoutW(
+            hwnd,
+            WM_GETFONT,
+            WPARAM(0),
+            LPARAM(0),
+            SMTO_ABORTIFHUNG,
+            50,
+            Some(&mut result),
+        );
+        if result == 0 {
+            return None;
+        }
+        let mut font = LOGFONTW::default();
+        let size = std::mem::size_of::<LOGFONTW>() as i32;
+        if GetObjectW(
+            HFONT(result as *mut _),
+            size,
+            Some(&mut font as *mut _ as *mut _),
+        ) != size
+        {
+            return None;
+        }
+        (font.lfHeight != 0).then_some(font)
+    }
+}
+unsafe fn font(height: i32, preview: bool, source: Option<&LOGFONTW>) -> HFONT {
+    if preview && let Some(source) = source {
+        return unsafe { CreateFontIndirectW(source) };
+    }
     CreateFontW(
-        height,
+        if preview { -height } else { height },
         0,
         0,
         0,
@@ -98,22 +152,27 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
 unsafe fn draw(hwnd: HWND, dc: HDC) {
     let mut client = RECT::default();
     let _ = GetClientRect(hwnd, &mut client);
-    let snapshot = SURFACE.with(|s| {
-        s.borrow().as_ref().map(|s| {
-            (
-                s.text.clone(),
-                s.text_rect,
-                s.font_height,
-                color(s.began.elapsed().as_secs_f32(), s.busy),
-                s.editing,
-            )
+    let snapshot = [&SURFACE, &INSTRUCTION].into_iter().find_map(|surface| {
+        surface.with(|s| {
+            let s = s.borrow();
+            s.as_ref().filter(|s| s.hwnd == hwnd).map(|s| {
+                (
+                    s.text.clone(),
+                    s.text_rect,
+                    s.font_height,
+                    color(s.began.elapsed().as_secs_f32(), s.busy),
+                    s.editing,
+                    s.preview,
+                    s.source_font,
+                )
+            })
         })
     });
-    if let Some((text, mut rect, height, bg, editing)) = snapshot {
+    if let Some((text, mut rect, height, bg, editing, preview, source)) = snapshot {
         let brush = CreateSolidBrush(bg);
         FillRect(dc, &client, brush);
         let _ = DeleteObject(brush);
-        let font = font(height);
+        let font = font(height, preview, source.as_ref());
         let old = SelectObject(dc, font);
         SetBkMode(dc, TRANSPARENT);
         SetTextColor(dc, COLORREF(0x00301B0B));
@@ -126,20 +185,65 @@ unsafe fn draw(hwnd: HWND, dc: HDC) {
         let _ = DeleteObject(font);
     }
 }
-pub(crate) fn hide() {
-    // Taking ownership before DestroyWindow is essential: it can reenter wndproc.
-    if let Some(s) = SURFACE.with(|s| s.borrow_mut().take()) {
+fn hide_surface(surface: &'static std::thread::LocalKey<RefCell<Option<Surface>>>) {
+    let old = surface.with(|s| s.borrow_mut().take());
+    if let Some(s) = old {
         unsafe {
             let _ = DestroyWindow(s.hwnd);
         }
     }
 }
-pub(crate) fn show(view: View) {
-    show_impl(view, true);
+pub(crate) fn hide() {
+    hide_surface(&INSTRUCTION);
+    hide_surface(&SURFACE);
+}
+pub(crate) fn show(view: View, instruction: Option<View>) {
+    show_pair(view, instruction, true);
+}
+fn show_pair(view: View, instruction: Option<View>, visible: bool) {
+    show_impl(view, visible);
+    if let Some(mut instruction) = instruction {
+        let placement = SURFACE.with(|s| s.borrow().as_ref().map(|s| (s.hwnd, s.pool)));
+        if let Some((hwnd, pool)) = placement {
+            let mut bounds = RECT::default();
+            if unsafe { GetWindowRect(hwnd, &mut bounds) }.is_err() {
+                hide_surface(&INSTRUCTION);
+                return;
+            }
+            let height = instruction.geometry.caret.bottom - instruction.geometry.caret.top;
+            let gap = caret_gap(unsafe { GetDpiForWindow(hwnd) });
+            let (right, top) = if bounds.right + gap + height < instruction.geometry.viewport.right
+            {
+                (bounds.right, pool.top)
+            } else {
+                // At the right edge, keep the correction field separate below the preview.
+                (pool.left - gap, bounds.bottom + gap)
+            };
+            instruction.geometry.caret = RECT {
+                left: right,
+                right,
+                top,
+                bottom: top + height,
+            };
+            instruction.geometry.lines.clear();
+            show_surface(instruction, visible, &INSTRUCTION);
+        } else {
+            hide_surface(&INSTRUCTION);
+        }
+    } else {
+        hide_surface(&INSTRUCTION);
+    }
 }
 fn show_impl(view: View, visible: bool) {
+    show_surface(view, visible, &SURFACE);
+}
+fn show_surface(
+    view: View,
+    visible: bool,
+    surface: &'static std::thread::LocalKey<RefCell<Option<Surface>>>,
+) {
     unsafe {
-        let mut hwnd = SURFACE.with(|s| s.borrow().as_ref().map(|s| s.hwnd));
+        let mut hwnd = surface.with(|s| s.borrow().as_ref().map(|s| s.hwnd));
         if hwnd.is_none() {
             let instance = GetModuleHandleW(None).unwrap_or_default();
             let class = WNDCLASSW {
@@ -192,7 +296,7 @@ fn show_impl(view: View, visible: bool) {
             (height * 2 / 3).max(8)
         };
         let dc = GetDC(hwnd);
-        let f = font(font_height);
+        let f = font(font_height, preview, g.font.as_ref());
         let old = SelectObject(dc, f);
         let mut buffer: Vec<u16> = view.text.encode_utf16().collect();
         if view.editing {
@@ -221,7 +325,7 @@ fn show_impl(view: View, visible: bool) {
         // Hidden native tests use the final geometry, without animation timing.
         if visible
             && !preview
-            && let Some(previous) = SURFACE.with(|s| s.borrow().as_ref().map(|s| s.pool))
+            && let Some(previous) = surface.with(|s| s.borrow().as_ref().map(|s| s.pool))
             && previous.left == pool.left
             && previous.top == pool.top
             && previous.bottom == pool.bottom
@@ -299,7 +403,7 @@ fn show_impl(view: View, visible: bool) {
             right: pool.right - bounds.left - padding,
             bottom: pool.bottom - bounds.top,
         };
-        SURFACE.with(|s| {
+        surface.with(|s| {
             let mut s = s.borrow_mut();
             let began = s
                 .as_ref()
@@ -311,6 +415,8 @@ fn show_impl(view: View, visible: bool) {
                 text: view.text,
                 text_rect,
                 font_height,
+                preview,
+                source_font: g.font,
                 busy: view.busy,
                 editing: view.editing,
                 began,
@@ -349,6 +455,103 @@ mod tests {
     use super::*;
     #[test]
     #[ignore = "requires a Windows desktop; creates only hidden windows"]
+    fn preview_and_followup_have_independent_windows_and_fonts() {
+        unsafe {
+            let mut source = LOGFONTW {
+                lfHeight: -32,
+                lfWeight: 400,
+                ..Default::default()
+            };
+            for (dst, value) in source
+                .lfFaceName
+                .iter_mut()
+                .zip("Yu Gothic UI".encode_utf16())
+            {
+                *dst = value;
+            }
+            let geometry = Geometry {
+                caret: RECT {
+                    left: 200,
+                    right: 202,
+                    top: 100,
+                    bottom: 140,
+                },
+                lines: vec![RECT {
+                    left: 100,
+                    right: 200,
+                    top: 100,
+                    bottom: 140,
+                }],
+                viewport: RECT {
+                    left: 0,
+                    top: 0,
+                    right: 1200,
+                    bottom: 900,
+                },
+                font: Some(source),
+            };
+            for replace in [false, true] {
+                for (instruction, busy) in
+                    [("", false), ("もっと丁寧", false), ("もっと丁寧", true)]
+                {
+                    show_pair(
+                        View {
+                            geometry: geometry.clone(),
+                            text: "候補の文章".into(),
+                            replace,
+                            busy: false,
+                            editing: false,
+                        },
+                        Some(View {
+                            geometry: geometry.clone(),
+                            text: instruction.into(),
+                            replace: false,
+                            busy,
+                            editing: !busy,
+                        }),
+                        false,
+                    );
+                    let main = SURFACE.with(|s| s.borrow().as_ref().unwrap().hwnd);
+                    let followup = INSTRUCTION.with(|s| s.borrow().as_ref().unwrap().hwnd);
+                    assert_ne!(main, followup);
+                    let mut a = RECT::default();
+                    let mut b = RECT::default();
+                    GetWindowRect(main, &mut a).unwrap();
+                    GetWindowRect(followup, &mut b).unwrap();
+                    assert!(b.left >= a.right + caret_gap(GetDpiForWindow(followup)));
+                    assert_eq!(
+                        b.top,
+                        SURFACE.with(|s| s.borrow().as_ref().unwrap().pool.top)
+                    );
+                    assert_eq!(
+                        SURFACE.with(|s| s.borrow().as_ref().unwrap().text.clone()),
+                        "候補の文章"
+                    );
+                    for hwnd in [main, followup] {
+                        let dc = GetDC(hwnd);
+                        draw(hwnd, dc);
+                        ReleaseDC(hwnd, dc);
+                    }
+                    hide();
+                    assert!(!IsWindow(main).as_bool());
+                    assert!(!IsWindow(followup).as_bool());
+                }
+            }
+            let dc = CreateCompatibleDC(None);
+            for (source, expected) in [(None, 40), (Some(&source), 32)] {
+                let f = font(40, true, source);
+                let old = SelectObject(dc, f);
+                let mut metrics = TEXTMETRICW::default();
+                GetTextMetricsW(dc, &mut metrics).unwrap();
+                assert_eq!(metrics.tmHeight - metrics.tmInternalLeading, expected);
+                SelectObject(dc, old);
+                let _ = DeleteObject(f);
+            }
+            let _ = DeleteDC(dc);
+        }
+    }
+    #[test]
+    #[ignore = "requires a Windows desktop; creates only hidden windows"]
     fn instruction_grows_right_at_text_height_desktop_regression() {
         for height in [20, 30, 40] {
             let geometry = Geometry {
@@ -359,6 +562,7 @@ mod tests {
                     bottom: 100 + height,
                 },
                 lines: vec![],
+                font: None,
                 viewport: RECT {
                     left: 0,
                     top: 0,
@@ -470,6 +674,7 @@ mod tests {
                 right: 100,
                 bottom: 130,
             }],
+            font: None,
             viewport: RECT {
                 left: 0,
                 top: 0,
@@ -533,6 +738,7 @@ mod tests {
                         bottom: second.bottom,
                     },
                     lines: vec![original, second],
+                    font: None,
                     viewport: RECT {
                         left: 0,
                         top: 0,
