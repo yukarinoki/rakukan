@@ -46,6 +46,9 @@ internal sealed class UserDictEntry : INotifyPropertyChanged
 
     public string SurfacesJoined => string.Join("、", Surfaces);
 
+    // The conversion engine uses reading/surfaces; retain these fields for text round-trips.
+    public Dictionary<string, UserDictWordInfo> WordInfo { get; set; } = new(StringComparer.Ordinal);
+
     public event PropertyChangedEventHandler? PropertyChanged;
 
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
@@ -340,7 +343,7 @@ internal sealed class SettingsStore
 
     public void OpenKeymap() => OpenInNotepad(KeymapPath);
 
-    private static List<UserDictEntry> LoadUserDict(string path)
+    internal static List<UserDictEntry> LoadUserDict(string path)
     {
         if (!File.Exists(path))
         {
@@ -364,13 +367,19 @@ internal sealed class SettingsStore
             }
 
             var surfaces = new List<string>();
+            var wordInfo = new Dictionary<string, UserDictWordInfo>(StringComparer.Ordinal);
+            var parts = item.TryGetValue("parts_of_speech", out var p) ? p as TomlArray : null;
+            var comments = item.TryGetValue("comments", out var c) ? c as TomlArray : null;
             if (item.TryGetValue("surfaces", out var surfacesValue) && surfacesValue is TomlArray array)
             {
-                foreach (var s in array.OfType<string>())
+                for (var i = 0; i < array.Count; i++)
                 {
-                    if (!string.IsNullOrWhiteSpace(s))
+                    if (array[i] is string s && !string.IsNullOrWhiteSpace(s))
                     {
                         surfaces.Add(s);
+                        wordInfo[s] = new UserDictWordInfo(
+                            parts is not null && i < parts.Count && parts[i] is string part ? part : "名詞",
+                            comments is not null && i < comments.Count && comments[i] is string comment ? comment : "");
                     }
                 }
             }
@@ -384,13 +393,14 @@ internal sealed class SettingsStore
             {
                 Reading = reading!.Trim(),
                 Surfaces = surfaces,
+                WordInfo = wordInfo,
             });
         }
 
         return result;
     }
 
-    private static bool SaveUserDict(string path, List<UserDictEntry> entries)
+    internal static bool SaveUserDict(string path, List<UserDictEntry> entries)
     {
         EnsureDirectory(path);
 
@@ -409,14 +419,21 @@ internal sealed class SettingsStore
                 ["reading"] = entry.Reading.Trim(),
             };
             var surfaces = new TomlArray();
+            var parts = new TomlArray();
+            var comments = new TomlArray();
             foreach (var s in entry.Surfaces)
             {
                 if (!string.IsNullOrWhiteSpace(s))
                 {
                     surfaces.Add(s);
+                    var info = entry.WordInfo.GetValueOrDefault(s) ?? new();
+                    parts.Add(info.PartOfSpeech);
+                    comments.Add(info.Comment);
                 }
             }
             table["surfaces"] = surfaces;
+            table["parts_of_speech"] = parts;
+            table["comments"] = comments;
             array.Add(table);
         }
 

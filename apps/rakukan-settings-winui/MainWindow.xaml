@@ -432,6 +432,11 @@
                                     <AppBarSeparator />
                                     <Button Content="user_dict.toml を開く" Click="OpenUserDictButton_Click" />
                                 </StackPanel>
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Button Content="インポート…" Click="UserDictImportButton_Click" />
+                                    <Button Content="エクスポート…" Click="UserDictExportButton_Click" />
+                                </StackPanel>
+                                <TextBlock Text="タブ区切りの辞書（読み・単語・品詞・コメント）に対応。インポートは既存の辞書に追加し、保存時に反映します。エクスポートには編集中の項目も含まれます。" TextWrapping="Wrap" Opacity="0.7" />
                                 <Grid ColumnSpacing="12" Padding="12,8,12,8" Background="{ThemeResource ControlFillColorSecondaryBrush}">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="200" />

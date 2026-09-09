@@ -109,6 +109,7 @@ public sealed partial class MainWindow : Window
                 {
                     Reading = entry.Reading,
                     Surfaces = new List<string>(entry.Surfaces),
+                    WordInfo = new(entry.WordInfo, StringComparer.Ordinal),
                 });
             }
         }
@@ -187,6 +188,7 @@ public sealed partial class MainWindow : Window
             {
                 Reading = e.Reading,
                 Surfaces = new List<string>(e.Surfaces),
+                WordInfo = new(e.WordInfo, StringComparer.Ordinal),
             })
             .ToList();
 
@@ -397,6 +399,46 @@ public sealed partial class MainWindow : Window
         {
             await ShowDialogAsync("user_dict.toml を開けませんでした", ex.Message);
         }
+    }
+
+    private async void UserDictImportButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var picker = new Windows.Storage.Pickers.FileOpenPicker
+            {
+                SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.Desktop,
+            };
+            WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(this));
+            picker.FileTypeFilter.Add(".txt");
+            picker.FileTypeFilter.Add(".tsv");
+            var file = await picker.PickSingleFileAsync();
+            if (file is null) return;
+            var entries = await Task.Run(() => UserDictionaryTransfer.Read(file.Path));
+            var (added, duplicates) = UserDictionaryTransfer.Merge(_userDictEntries, entries);
+            await ShowDialogAsync("インポートしました", $"{added} 語を追加しました。重複 {duplicates} 語はスキップしました。\n保存すると IME に反映されます。");
+        }
+        catch (Exception ex) { await ShowDialogAsync("インポートできませんでした", ex.Message); }
+    }
+
+    private async void UserDictExportButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var entries = CaptureSettingsFromUi().UserDict;
+            var picker = new Windows.Storage.Pickers.FileSavePicker
+            {
+                SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.Desktop,
+                SuggestedFileName = "user_dictionary",
+            };
+            WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(this));
+            picker.FileTypeChoices.Add("ユーザー辞書（タブ区切り）", new List<string> { ".txt" });
+            var file = await picker.PickSaveFileAsync();
+            if (file is null) return;
+            await Task.Run(() => UserDictionaryTransfer.Write(file.Path, entries));
+            await ShowDialogAsync("エクスポートしました", $"{entries.Sum(e => e.Surfaces.Count)} 語を書き出しました。\n{file.Path}");
+        }
+        catch (Exception ex) { await ShowDialogAsync("エクスポートできませんでした", ex.Message); }
     }
 
     private async void UserDictAddButton_Click(object sender, RoutedEventArgs e)

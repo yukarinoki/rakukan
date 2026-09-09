@@ -35,6 +35,7 @@ pub struct HostShared {
     /// ロックが塞がっていても即応答できる必要がある（`Shutdown` が engine
     /// ロックなしで動くのと同じ理由）。ロックは比較・更新の瞬間だけ保持する。
     pub config_json: Mutex<Option<String>>,
+    user_dictionary: Mutex<Option<Vec<u8>>>,
 }
 
 impl HostShared {
@@ -42,6 +43,7 @@ impl HostShared {
         Self {
             state: Mutex::new(SharedEngineState { engine: None }),
             config_json: Mutex::new(None),
+            user_dictionary: Mutex::new(read_user_dictionary()),
         }
     }
 
@@ -55,11 +57,23 @@ impl HostShared {
 
     /// config_json を短時間ロックで更新する。poisoned は回復する。
     fn set_config(&self, cfg: Option<String>) {
+        *self
+            .user_dictionary
+            .lock()
+            .unwrap_or_else(|p| p.into_inner()) = read_user_dictionary();
         match self.config_json.lock() {
             Ok(mut g) => *g = cfg,
             Err(p) => *p.into_inner() = cfg,
         }
     }
+}
+
+// Compare contents rather than timestamps: imports may preserve an old timestamp.
+fn read_user_dictionary() -> Option<Vec<u8>> {
+    let path = std::path::PathBuf::from(std::env::var_os("APPDATA")?)
+        .join("rakukan")
+        .join("user_dict.toml");
+    std::fs::read(path).ok()
 }
 
 impl Default for HostShared {
@@ -244,11 +258,20 @@ fn dispatch(engine: &SharedEngine, req: Request) -> Response {
             // 変換中でも応答できるよう engine ロックは取らない（Shutdown と同じ扱い）。
             // config だけを短時間ロックで比較する。
             let current = engine.config_snapshot();
-            if current == config_json {
-                tracing::info!("rpc: ShutdownIfConfigDiffers: config unchanged, keeping host");
+            let dictionary_unchanged = *engine
+                .user_dictionary
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                == read_user_dictionary();
+            if current == config_json && dictionary_unchanged {
+                tracing::info!(
+                    "rpc: ShutdownIfConfigDiffers: config and user dictionary unchanged, keeping host"
+                );
                 Response::Bool(false)
             } else {
-                tracing::info!("rpc: ShutdownIfConfigDiffers: config differs, will exit");
+                tracing::info!(
+                    "rpc: ShutdownIfConfigDiffers: config or user dictionary differs, will exit"
+                );
                 Response::Bool(true)
             }
         }
@@ -483,6 +506,20 @@ pub fn sleep_short() {
 #[cfg(test)]
 mod readiness_tests {
     use super::*;
+
+    #[test]
+    fn dictionary_change_restarts_host_even_when_config_is_unchanged() {
+        let host = Arc::new(HostShared::new());
+        let request = || Request::ShutdownIfConfigDiffers { config_json: None };
+        assert!(matches!(dispatch(&host, request()), Response::Bool(false)));
+        // Alter the saved snapshot without touching the user's dictionary or process environment.
+        let mut different = read_user_dictionary().unwrap_or_default();
+        different.push(0);
+        *host.user_dictionary.lock().unwrap() = Some(different);
+        assert!(matches!(dispatch(&host, request()), Response::Bool(true)));
+        host.set_config(None);
+        assert!(matches!(dispatch(&host, request()), Response::Bool(false)));
+    }
 
     /// 実 DLL とインストール済み辞書を使用。学習は行わない。
     #[test]
