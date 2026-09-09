@@ -44,5 +44,16 @@ actual GDI font metrics. On the development PC both monitors reported 192 DPI fo
 aware windows and 96 DPI for unaware windows; all six combinations passed.
 
 Physical 150%/200% mixed-monitor operation and changing Windows scaling while a
-candidate list is visible still need interactive verification. The mode indicator
-and language-bar icons are separate renderers and are outside this setting's scope.
+candidate list is visible still need interactive verification. Language-bar icons
+are separate renderers and are outside this setting's scope.
+
+The temporary caret mode indicator (A / あ / ア) also follows its window DPI.
+Its 32-unit square and 22-unit font become 48/33 at 150% and 64/44 at 200%.
+Each show moves the HWND to the caret monitor before reading its DPI; unaware
+applications retain 96-DPI coordinates to avoid double scaling. Text is centered
+using its actual glyph width, and positioning accounts for the scaled size and
+the monitor work area. WM_DPICHANGED resizes and repaints a visible indicator.
+This size is independent of the candidate-font preference.
+
+`mode_indicator_dpi_desktop_regression` explicitly tests real windows for all
+three mode characters under unaware, system-aware and per-monitor-v2 contexts.

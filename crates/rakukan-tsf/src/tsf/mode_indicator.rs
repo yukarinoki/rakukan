@@ -5,7 +5,7 @@
 //!
 //! # 表示仕様
 //! - WS_POPUP + WS_EX_TOPMOST + WS_EX_NOACTIVATE（フォーカスを奪わない）
-//! - モード文字を 1 文字表示（32x32 程度）
+//! - モード文字を 1 文字表示（100% で 32x32、ウィンドウ DPI に追従）
 //! - 表示後 1.5 秒でフェードアウト開始、約 0.5 秒で完全に消える
 //! - キー入力があれば即非表示
 
@@ -16,17 +16,19 @@ use windows::{
     Win32::{
         Foundation::{BOOL, COLORREF, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM},
         Graphics::Gdi::{
-            BACKGROUND_MODE, BeginPaint, ClientToScreen, CreateFontW, CreateSolidBrush,
-            DeleteObject, EndPaint, FillRect, GetMonitorInfoW, HDC, InvalidateRect,
-            MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromPoint, PAINTSTRUCT, SelectObject,
-            SetBkMode, SetTextColor, TextOutW,
+            BACKGROUND_MODE, BeginPaint, ClientToScreen, CreateFontW, CreateSolidBrush, DT_CENTER,
+            DT_SINGLELINE, DT_VCENTER, DeleteObject, DrawTextW, EndPaint, FillRect,
+            GetMonitorInfoW, HDC, InvalidateRect, MONITOR_DEFAULTTONEAREST, MONITORINFO,
+            MonitorFromPoint, PAINTSTRUCT, SelectObject, SetBkMode, SetTextColor,
         },
         System::LibraryLoader::GetModuleHandleW,
+        UI::HiDpi::GetDpiForWindow,
         UI::WindowsAndMessaging::{
-            CreateWindowExW, DefWindowProcW, DestroyWindow, GUITHREADINFO, GetGUIThreadInfo, HMENU,
-            HWND_TOPMOST, KillTimer, RegisterClassW, SW_HIDE, SW_SHOWNOACTIVATE, SWP_NOACTIVATE,
-            SWP_NOSIZE, SetTimer, SetWindowPos, ShowWindow, WM_ERASEBKGND, WM_PAINT, WM_TIMER,
-            WNDCLASSW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
+            CreateWindowExW, DefWindowProcW, DestroyWindow, GUITHREADINFO, GetClientRect,
+            GetGUIThreadInfo, HMENU, HWND_TOPMOST, KillTimer, RegisterClassW, SW_HIDE,
+            SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SWP_NOREDRAW, SetTimer, SetWindowPos, ShowWindow,
+            WM_DPICHANGED, WM_ERASEBKGND, WM_PAINT, WM_TIMER, WNDCLASSW, WS_EX_NOACTIVATE,
+            WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
         },
     },
     core::PCWSTR,
@@ -98,8 +100,26 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             let mut ps = PAINTSTRUCT::default();
             let hdc = BeginPaint(hwnd, &mut ps);
             if !hdc.is_invalid() {
-                draw(hdc);
+                draw(hwnd, hdc);
                 let _ = EndPaint(hwnd, &ps);
+            }
+            LRESULT(0)
+        }
+        WM_DPICHANGED => {
+            // The suggested rectangle is in this window's coordinate space.
+            if lparam.0 != 0 {
+                let rect = &*(lparam.0 as *const RECT);
+                let size = scaled(WIN_SIZE, (wparam.0 & 0xffff) as u32);
+                let _ = SetWindowPos(
+                    hwnd,
+                    HWND_TOPMOST,
+                    rect.left,
+                    rect.top,
+                    size,
+                    size,
+                    SWP_NOACTIVATE,
+                );
+                let _ = InvalidateRect(hwnd, None, BOOL(0));
             }
             LRESULT(0)
         }
@@ -116,7 +136,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
 
 // ─── 描画 ─────────────────────────────────────────────────────────────────────
 
-unsafe fn draw(hdc: HDC) {
+unsafe fn draw(hwnd: HWND, hdc: HDC) {
     let text = TL_TEXT.with(|t| t.get());
     let light = TL_LIGHT.with(|l| l.get());
 
@@ -127,18 +147,14 @@ unsafe fn draw(hdc: HDC) {
     };
 
     let bg_brush = CreateSolidBrush(bg);
-    let rc = RECT {
-        left: 0,
-        top: 0,
-        right: WIN_SIZE,
-        bottom: WIN_SIZE,
-    };
+    let mut rc = RECT::default();
+    let _ = GetClientRect(hwnd, &mut rc);
     FillRect(hdc, &rc, bg_brush);
     let _ = DeleteObject(bg_brush);
 
     let face: Vec<u16> = "Yu Gothic UI\0".encode_utf16().collect();
     let font = CreateFontW(
-        FONT_HEIGHT,
+        scaled(FONT_HEIGHT, GetDpiForWindow(hwnd)),
         0,
         0,
         0,
@@ -157,11 +173,14 @@ unsafe fn draw(hdc: HDC) {
     SetBkMode(hdc, BACKGROUND_MODE(1)); // TRANSPARENT
     SetTextColor(hdc, fg);
 
-    let wbuf: Vec<u16> = text.encode_utf16().collect();
-    // 中央揃え
-    let tx = (WIN_SIZE - FONT_HEIGHT) / 2;
-    let ty = (WIN_SIZE - FONT_HEIGHT) / 2;
-    let _ = TextOutW(hdc, tx, ty, &wbuf);
+    let mut wbuf: Vec<u16> = text.encode_utf16().collect();
+    // Measure the actual glyph: Latin A is narrower than あ/ア.
+    DrawTextW(
+        hdc,
+        &mut wbuf,
+        &mut rc,
+        DT_CENTER | DT_VCENTER | DT_SINGLELINE,
+    );
 
     let _ = SelectObject(hdc, old_font);
     let _ = DeleteObject(font);
@@ -222,53 +241,52 @@ pub fn show(mode_char: &'static str, x: i32, y: i32) {
     TL_TEXT.with(|t| t.set(mode_char));
     TL_LIGHT.with(|l| l.set(light));
 
-    let win_y = unsafe { calc_window_y(x, y) };
-    let hwnd = TL_HWND.with(|h| HWND(h.get() as *mut _));
-
-    if is_valid(hwnd) {
-        unsafe {
-            let _ = SetWindowPos(
-                hwnd,
-                HWND_TOPMOST,
-                x,
-                win_y,
-                0,
-                0,
-                SWP_NOACTIVATE | SWP_NOSIZE,
-            );
-            let _ = InvalidateRect(hwnd, None, BOOL(0));
-            let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
-            // タイマーリセット
-            let _ = KillTimer(hwnd, HIDE_TIMER_ID);
-            let _ = SetTimer(hwnd, HIDE_TIMER_ID, FADE_START_MS, None);
-        }
-    } else {
-        unsafe {
+    unsafe {
+        let mut hwnd = TL_HWND.with(|h| HWND(h.get() as *mut _));
+        if !is_valid(hwnd) {
             ensure_class_registered();
             let hmod = GetModuleHandleW(PCWSTR::null()).unwrap_or_default();
-            match CreateWindowExW(
+            hwnd = match CreateWindowExW(
                 WS_EX_TOPMOST | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
                 PCWSTR(CLASS_NAME_UTF16.as_ptr()),
                 PCWSTR::null(),
                 WS_POPUP,
                 x,
-                win_y,
-                WIN_SIZE,
-                WIN_SIZE,
+                y,
+                1,
+                1,
                 HWND::default(),
                 HMENU::default(),
                 hmod,
                 None,
             ) {
-                Ok(new_hwnd) if is_valid(new_hwnd) => {
-                    TL_HWND.with(|h| h.set(new_hwnd.0 as isize));
-                    let _ = ShowWindow(new_hwnd, SW_SHOWNOACTIVATE);
-                    let _ = SetTimer(new_hwnd, HIDE_TIMER_ID, FADE_START_MS, None);
-                    tracing::debug!("mode_indicator::create: hwnd={:?}", new_hwnd);
+                Ok(hwnd) if is_valid(hwnd) => hwnd,
+                _ => {
+                    tracing::warn!("mode_indicator::create: failed");
+                    return;
                 }
-                Ok(_) | Err(_) => tracing::warn!("mode_indicator::create: failed"),
-            }
+            };
+            TL_HWND.with(|h| h.set(hwnd.0 as isize));
         }
+        // Move before querying DPI, including when reusing a window on another monitor.
+        // Use the HWND's DPI so unaware hosts do not get scaled twice by Windows.
+        let _ = SetWindowPos(
+            hwnd,
+            HWND_TOPMOST,
+            x,
+            y,
+            1,
+            1,
+            SWP_NOACTIVATE | SWP_NOREDRAW,
+        );
+        let dpi = GetDpiForWindow(hwnd);
+        let size = scaled(WIN_SIZE, dpi);
+        let (win_x, win_y) = calc_window_position(x, y, dpi);
+        let _ = SetWindowPos(hwnd, HWND_TOPMOST, win_x, win_y, size, size, SWP_NOACTIVATE);
+        let _ = InvalidateRect(hwnd, None, BOOL(0));
+        let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+        let _ = KillTimer(hwnd, HIDE_TIMER_ID);
+        let _ = SetTimer(hwnd, HIDE_TIMER_ID, FADE_START_MS, None);
     }
     VISIBLE.store(true, Ordering::Release);
 }
@@ -313,18 +331,105 @@ fn is_valid(hwnd: HWND) -> bool {
     !hwnd.0.is_null()
 }
 
-unsafe fn calc_window_y(x: i32, caret_bottom: i32) -> i32 {
-    let pt = POINT { x, y: caret_bottom };
-    let hmon = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
+fn scaled(value: i32, dpi: u32) -> i32 {
+    let dpi = if dpi == 0 { 96 } else { dpi };
+    ((i64::from(value) * i64::from(dpi) + 48) / 96) as i32
+}
+
+fn position_in_work_area(x: i32, caret_bottom: i32, dpi: u32, work: RECT) -> (i32, i32) {
+    let size = scaled(WIN_SIZE, dpi);
+    let y = if caret_bottom + size > work.bottom {
+        caret_bottom - scaled(CARET_HEIGHT_ESTIMATE + 4, dpi) - size
+    } else {
+        caret_bottom
+    };
+    (
+        x.clamp(work.left, (work.right - size).max(work.left)),
+        y.clamp(work.top, (work.bottom - size).max(work.top)),
+    )
+}
+
+unsafe fn calc_window_position(x: i32, caret_bottom: i32, dpi: u32) -> (i32, i32) {
+    let hmon = MonitorFromPoint(POINT { x, y: caret_bottom }, MONITOR_DEFAULTTONEAREST);
     let mut mi = MONITORINFO {
         cbSize: std::mem::size_of::<MONITORINFO>() as u32,
         ..Default::default()
     };
     if GetMonitorInfoW(hmon, &mut mi).as_bool() {
-        let work_bottom = mi.rcWork.bottom;
-        if caret_bottom + WIN_SIZE > work_bottom {
-            return caret_bottom - CARET_HEIGHT_ESTIMATE - WIN_SIZE - 4;
+        position_in_work_area(x, caret_bottom, dpi, mi.rcWork)
+    } else {
+        (x, caret_bottom)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[ignore = "requires a Windows desktop; run explicitly"]
+    fn mode_indicator_dpi_desktop_regression() {
+        use windows::Win32::UI::HiDpi::{
+            DPI_AWARENESS_CONTEXT, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
+            DPI_AWARENESS_CONTEXT_SYSTEM_AWARE, DPI_AWARENESS_CONTEXT_UNAWARE,
+            SetThreadDpiAwarenessContext,
+        };
+        struct Restore(DPI_AWARENESS_CONTEXT);
+        impl Drop for Restore {
+            fn drop(&mut self) {
+                destroy();
+                unsafe {
+                    SetThreadDpiAwarenessContext(self.0);
+                }
+            }
+        }
+        for context in [
+            DPI_AWARENESS_CONTEXT_UNAWARE,
+            DPI_AWARENESS_CONTEXT_SYSTEM_AWARE,
+            DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
+        ] {
+            unsafe {
+                let old = SetThreadDpiAwarenessContext(context);
+                assert!(!old.0.is_null());
+                let _restore = Restore(old);
+                for text in ["A", "あ", "ア"] {
+                    show(text, 100, 100);
+                    let hwnd = TL_HWND.with(|h| HWND(h.get() as *mut _));
+                    assert!(is_valid(hwnd));
+                    let dpi = GetDpiForWindow(hwnd);
+                    assert!(dpi >= 96);
+                    let mut rect = RECT::default();
+                    GetClientRect(hwnd, &mut rect).unwrap();
+                    assert_eq!(rect.right - rect.left, scaled(WIN_SIZE, dpi));
+                    assert_eq!(rect.bottom - rect.top, scaled(WIN_SIZE, dpi));
+                    println!(
+                        "mode={text} dpi={dpi} size={} font={}",
+                        rect.right,
+                        scaled(FONT_HEIGHT, dpi)
+                    );
+                    hide();
+                }
+            }
         }
     }
-    caret_bottom
+
+    #[test]
+    fn scales_indicator_and_keeps_it_inside_work_area() {
+        let work = RECT {
+            left: -1920,
+            top: 0,
+            right: 0,
+            bottom: 1080,
+        };
+        for (dpi, size, font) in [(96, 32, 22), (144, 48, 33), (192, 64, 44)] {
+            assert_eq!(scaled(WIN_SIZE, dpi), size);
+            assert_eq!(scaled(FONT_HEIGHT, dpi), font);
+            assert_eq!(position_in_work_area(-500, 300, dpi, work), (-500, 300));
+            let (x, y) = position_in_work_area(-1, 1070, dpi, work);
+            assert_eq!(x + size, work.right);
+            assert!(y + size < 1070);
+            assert!(y >= work.top);
+        }
+        assert_eq!(scaled(WIN_SIZE, 0), 32);
+    }
 }
