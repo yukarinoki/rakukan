@@ -6,6 +6,9 @@ namespace Rakukan.Settings.WinUI;
 public sealed partial class MainWindow
 {
     private AiConfig _aiConfig = new();
+    private bool _aiReady;
+    private bool _aiPersistedEnabled;
+    private bool _aiSavingEnabled;
     private AiCommand? _aiCommand;
     private CancellationTokenSource? _aiCancel;
     private void AiSection_Click(object sender, RoutedEventArgs e)
@@ -28,6 +31,31 @@ public sealed partial class MainWindow
         AiUrl.Text = _aiConfig.Url; AiServerPath.Text = _aiConfig.ServerPath; AiModelPath.Text = _aiConfig.ModelPath;
         AiModelName.Text = _aiConfig.Model; AiPort.Value = _aiConfig.Port; AiTimeout.Value = _aiConfig.TimeoutSeconds; AiMaxTokens.Value = _aiConfig.MaxTokens;
         RefreshAiCommands(); AiBackend_Changed(null!, null!);
+        _aiPersistedEnabled = AiEnabled.IsOn;
+        _aiReady = true;
+    }
+    private void AiEnabled_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (!_aiReady || _aiSavingEnabled) return;
+        _aiSavingEnabled = true;
+        try
+        {
+            // Enabling applies the visible AI settings. Disabling always works even
+            // when other unsaved fields are incomplete. Never reload the conversion engine.
+            var config = AiEnabled.IsOn ? CaptureAiSettings() : AiConfig.Load();
+            config.Enabled = AiEnabled.IsOn;
+            config.Validate();
+            if (config.Enabled) AiSecret.Save(AiApiKey.Password);
+            config.Save();
+            _aiPersistedEnabled = config.Enabled;
+        }
+        catch (Exception ex)
+        {
+            AiEnabled.IsOn = _aiPersistedEnabled;
+            AiTestStatus.Text = "AIモードを反映できませんでした: " + ex.Message;
+            SelectAiSection("test");
+        }
+        finally { _aiSavingEnabled = false; }
     }
     private void AiBackend_Changed(object sender, SelectionChangedEventArgs e)
     {
