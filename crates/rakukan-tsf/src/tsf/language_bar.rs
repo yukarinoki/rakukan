@@ -145,50 +145,7 @@ use windows::Win32::UI::WindowsAndMessaging::{CreateIconIndirect, ICONINFO};
 
 /// テーマ (ライト/ダーク) を検出する。判定不能時はダークと見なす。
 pub fn is_light_mode() -> bool {
-    use windows::Win32::System::Registry::{
-        HKEY_CURRENT_USER, KEY_READ, REG_DWORD, RegCloseKey, RegOpenKeyExW, RegQueryValueExW,
-    };
-    unsafe {
-        let mut hkey = Default::default();
-        let subkey: Vec<u16> = "Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize"
-            .encode_utf16()
-            .chain(std::iter::once(0))
-            .collect();
-        if RegOpenKeyExW(
-            HKEY_CURRENT_USER,
-            windows::core::PCWSTR(subkey.as_ptr()),
-            0,
-            KEY_READ,
-            &mut hkey,
-        )
-        .is_err()
-        {
-            return false;
-        }
-        let val_name: Vec<u16> = "SystemUsesLightTheme"
-            .encode_utf16()
-            .chain(std::iter::once(0))
-            .collect();
-        let mut data = 0u32;
-        let mut size = 4u32;
-        let mut kind = REG_DWORD;
-        let result = if RegQueryValueExW(
-            hkey,
-            windows::core::PCWSTR(val_name.as_ptr()),
-            None,
-            Some(&mut kind),
-            Some(&mut data as *mut u32 as *mut u8),
-            Some(&mut size),
-        )
-        .is_ok()
-        {
-            data != 0
-        } else {
-            false
-        };
-        let _ = RegCloseKey(hkey);
-        result
-    }
+    super::theme::is_light(super::theme::Surface::Taskbar)
 }
 
 /// Render at the taskbar's actual small-icon resolution, even inside a DPI-unaware app.

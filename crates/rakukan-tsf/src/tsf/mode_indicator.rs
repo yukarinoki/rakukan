@@ -96,6 +96,13 @@ unsafe fn ensure_class_registered() {
 
 unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     match msg {
+        windows::Win32::UI::WindowsAndMessaging::WM_SETTINGCHANGE
+        | windows::Win32::UI::WindowsAndMessaging::WM_THEMECHANGED
+        | windows::Win32::UI::WindowsAndMessaging::WM_SYSCOLORCHANGE => {
+            TL_LIGHT.with(|l| l.set(super::theme::is_light(super::theme::Surface::App)));
+            let _ = InvalidateRect(hwnd, None, BOOL(0));
+            DefWindowProcW(hwnd, msg, wparam, lparam)
+        }
         WM_PAINT => {
             let mut ps = PAINTSTRUCT::default();
             let hdc = BeginPaint(hwnd, &mut ps);
@@ -237,7 +244,7 @@ pub fn show(mode_char: &'static str, x: i32, y: i32) {
         (x, y)
     };
 
-    let light = super::language_bar::is_light_mode();
+    let light = super::theme::is_light(super::theme::Surface::App);
     TL_TEXT.with(|t| t.set(mode_char));
     TL_LIGHT.with(|l| l.set(light));
 

@@ -10,4 +10,5 @@ pub(crate) mod live_session;
 pub(crate) mod mode_indicator;
 pub(crate) mod settings_launcher;
 pub(crate) mod status_menu;
+pub(crate) mod theme;
 pub(crate) mod tray_ipc;

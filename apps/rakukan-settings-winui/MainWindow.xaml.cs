@@ -25,6 +25,9 @@ public sealed partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        RootGrid.ActualThemeChanged += (_, _) => UpdateTitleBarTheme();
+        RootGrid.Loaded += (_, _) => UpdateTitleBarTheme();
+        Activated += (_, _) => UpdateTitleBarTheme();
         SetWindowIcon();
         ResizeToDefaultSize();
         AppWindow.Closing += AppWindow_Closing;
@@ -62,6 +65,17 @@ public sealed partial class MainWindow : Window
             AppWindow.SetIcon(AppIconPath);
         }
     }
+
+    private void UpdateTitleBarTheme()
+    {
+        // XAML follows the app theme automatically; the native title bar needs
+        // an explicit update both at startup and after ActualThemeChanged.
+        var dark = RootGrid.ActualTheme == ElementTheme.Dark ? 1 : 0;
+        _ = DwmSetWindowAttribute(WinRT.Interop.WindowNative.GetWindowHandle(this), 20, ref dark, sizeof(int));
+    }
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(IntPtr hwnd, uint attribute, ref int value, int size);
 
     private void ApplySettingsToUi(SettingsBundle bundle)
     {
@@ -329,7 +343,7 @@ public sealed partial class MainWindow : Window
 
     private void ApplyKeymapPresetDefaults()
     {
-        if (!KeymapInheritToggle.IsOn)
+        if (_isApplyingSettings || !KeymapInheritToggle.IsOn)
         {
             return;
         }

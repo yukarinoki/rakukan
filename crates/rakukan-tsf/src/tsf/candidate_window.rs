@@ -26,7 +26,7 @@ use std::sync::atomic::{AtomicU64, Ordering as AO};
 
 use windows::{
     Win32::{
-        Foundation::{BOOL, COLORREF, HWND, LPARAM, LRESULT, POINT, RECT, SIZE, WPARAM},
+        Foundation::{BOOL, HWND, LPARAM, LRESULT, POINT, RECT, SIZE, WPARAM},
         Graphics::Gdi::{
             BACKGROUND_MODE, BeginPaint, CreateCompatibleDC, CreateFontW, CreateSolidBrush,
             DeleteDC, DeleteObject, EndPaint, FillRect, GetDC, GetMonitorInfoW,
@@ -159,15 +159,6 @@ fn layout() -> Layout {
 
 /// キャレット高さの推定値（画面端反転時に使用）
 const CARET_HEIGHT_ESTIMATE: i32 = 24;
-
-/// 選択行のハイライト色（濃い青）
-const COLOR_SEL_BG: COLORREF = COLORREF(0x00_B4_4E_20); // #204EB4 → BGR
-/// 選択行のテキスト色（白）
-const COLOR_SEL_FG: COLORREF = COLORREF(0x00_FF_FF_FF);
-/// 通常行の背景色（白）
-const COLOR_BG: COLORREF = COLORREF(0x00_FF_FF_FF);
-/// 通常行のテキスト色（黒）
-const COLOR_FG: COLORREF = COLORREF(0x00_00_00_00);
 
 // ─── スレッドローカル状態 ──────────────────────────────────────────────────────
 
@@ -327,6 +318,12 @@ unsafe extern "system" fn wnd_proc(
                 reposition(x, y);
             }
             LRESULT(0)
+        }
+        windows::Win32::UI::WindowsAndMessaging::WM_SETTINGCHANGE
+        | windows::Win32::UI::WindowsAndMessaging::WM_THEMECHANGED
+        | windows::Win32::UI::WindowsAndMessaging::WM_SYSCOLORCHANGE => {
+            let _ = InvalidateRect(hwnd, None, BOOL(0));
+            DefWindowProcW(hwnd, msg, wparam, lparam)
         }
         WM_PAINT => {
             let mut ps = PAINTSTRUCT::default();
@@ -501,6 +498,7 @@ unsafe fn calc_window_x(x: i32, caret_bottom: i32, win_w: i32) -> i32 {
 unsafe fn draw(hdc: HDC) {
     // 寸法は show_with_status() が置いたスナップショットを使う（設定を直接読まない）
     let lay = layout();
+    let colors = super::theme::palette(super::theme::is_light(super::theme::Surface::App));
     let data = TL_CAND.with(|c| c.borrow().clone());
     if data.candidates.is_empty() {
         return;
@@ -512,7 +510,7 @@ unsafe fn draw(hdc: HDC) {
     let win_width = TL_WIN_WIDTH.with(|c| c.get());
 
     // 背景を白で塗りつぶし
-    let bg_brush = CreateSolidBrush(COLOR_BG);
+    let bg_brush = CreateSolidBrush(colors.background);
     let full = RECT {
         left: 0,
         top: 0,
@@ -543,10 +541,10 @@ unsafe fn draw(hdc: HDC) {
     let old_obj = SelectObject(hdc, font);
     SetBkMode(hdc, BACKGROUND_MODE(1)); // TRANSPARENT
 
-    let sel_brush = CreateSolidBrush(COLOR_SEL_BG);
-    let wht_brush = CreateSolidBrush(COLOR_BG);
-    let pager_brush = CreateSolidBrush(COLORREF(0x00_F0_F0_F0));
-    let status_brush = CreateSolidBrush(COLORREF(0x00_F8_F8_F8));
+    let sel_brush = CreateSolidBrush(colors.selected_background);
+    let wht_brush = CreateSolidBrush(colors.background);
+    let pager_brush = CreateSolidBrush(colors.pager_background);
+    let status_brush = CreateSolidBrush(colors.status_background);
 
     // ステータス行（先頭・グレー背景・番号なし・選択不可）
     let status_offset = if has_status {
@@ -558,7 +556,7 @@ unsafe fn draw(hdc: HDC) {
                 bottom: lay.padding_y + lay.status_height,
             };
             FillRect(hdc, &row, status_brush);
-            SetTextColor(hdc, COLORREF(0x00_88_88_88));
+            SetTextColor(hdc, colors.secondary);
             let text_w: Vec<u16> = s.encode_utf16().collect();
             let _ = TextOutW(
                 hdc,
@@ -583,7 +581,14 @@ unsafe fn draw(hdc: HDC) {
         };
         let is_sel = i == data.selected;
         FillRect(hdc, &row, if is_sel { sel_brush } else { wht_brush });
-        SetTextColor(hdc, if is_sel { COLOR_SEL_FG } else { COLOR_FG });
+        SetTextColor(
+            hdc,
+            if is_sel {
+                colors.selected_foreground
+            } else {
+                colors.foreground
+            },
+        );
         let text = format!("{} {}", i + 1, cand);
         let text_w: Vec<u16> = text.encode_utf16().collect();
         let _ = TextOutW(
@@ -606,7 +611,7 @@ unsafe fn draw(hdc: HDC) {
         FillRect(hdc, &row, pager_brush);
         let _ = windows::Win32::Graphics::Gdi::MoveToEx(hdc, 0, y, None);
         let _ = windows::Win32::Graphics::Gdi::LineTo(hdc, win_width, y);
-        SetTextColor(hdc, COLORREF(0x00_55_55_55));
+        SetTextColor(hdc, colors.secondary);
         let pager_text = format!("◀  {}  ▶", data.page_info);
         let pager_w: Vec<u16> = pager_text.encode_utf16().collect();
         let _ = TextOutW(

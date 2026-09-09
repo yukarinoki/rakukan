@@ -7,6 +7,39 @@ void Check(bool condition, string message) { if (!condition) throw new Exception
 string FileAt(string name) => Path.Combine(directory, name);
 try
 {
+    var keymapRoot = Tomlyn.Toml.ToModel("""
+        preset = "ms-ime-jis"
+        inherit_preset = true
+        [[bindings]]
+        key = "F6"
+        action = "hiragana"
+        [[bindings]]
+        key = "Henkan"
+        action = "ime_on"
+        [[bindings]]
+        key = "Ctrl+Caps"
+        action = "ime_on"
+        [[bindings]]
+        key = "Space"
+        action = "convert"
+        [[bindings]]
+        key = "Henkan"
+        action = "convert"
+        """);
+    var keymap = SettingsStore.LoadKeymap(keymapRoot);
+    Check(keymap.GetBinding(ManagedKeyAction.ImeOn) == "Henkan", "saved Henkan loaded as primary IME ON");
+    SettingsStore.SaveKeymap(keymapRoot, keymap);
+    var keyBindings = (Tomlyn.Model.TomlTableArray)keymapRoot["bindings"];
+    Check(keyBindings.Count(row => (string)row["key"] == "Henkan") == 1
+        && keyBindings.Single(row => (string)row["key"] == "Henkan")["action"].Equals("ime_on"), "hidden Henkan convert cannot override IME ON");
+    Check(keyBindings.Any(row => (string)row["key"] == "F6") && keyBindings.Any(row => (string)row["key"] == "Ctrl+Caps"), "unrelated and extra keys retained");
+    var savedKeymap = Tomlyn.Toml.FromModel(keymapRoot);
+    SettingsStore.SaveKeymap(keymapRoot, SettingsStore.LoadKeymap(Tomlyn.Toml.ToModel(savedKeymap)));
+    Check(savedKeymap == Tomlyn.Toml.FromModel(keymapRoot), "keymap save round trip is stable");
+    keymap.SetBinding(ManagedKeyAction.ImeOff, "henkan");
+    try { SettingsStore.SaveKeymap(keymapRoot, keymap); throw new Exception("accepted duplicate primary key"); }
+    catch (InvalidOperationException) { }
+    Console.WriteLine("Keymap primary precedence, extras, round trip and duplicate validation tests PASS");
     var learningJson = LearningHistoryClient.ParseResponse("""
         {"entries":[{"reading":"あるの","surface":"アルノ","last_access_time":1788959706,"frequency":4.99},
         {"reading":"あるの","surface":"あるの","last_access_time":1788959707,"frequency":6}]}

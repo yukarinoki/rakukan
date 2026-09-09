@@ -625,6 +625,7 @@ impl ITfTextInputProcessor_Impl for TextServiceFactory_Impl {
         candidate_window::stop_live_timer();
         candidate_window::clear_thread_mgr();
         crate::tsf::mode_indicator::destroy();
+        crate::tsf::theme::stop();
         if let Ok(mut sess) = session_get() {
             sess.set_idle();
         }
@@ -1372,7 +1373,8 @@ impl ITfSource_Impl for TextServiceFactory_Impl {
         if let Ok(sink) = punk.cast::<ITfLangBarItemSink>()
             && let Ok(mut inner) = self.inner.try_borrow_mut()
         {
-            inner.langbar_sink = Some(sink);
+            inner.langbar_sink = Some(sink.clone());
+            crate::tsf::theme::watch(sink);
         }
         Ok(LANGBAR_SINK_COOKIE)
     }
@@ -1385,6 +1387,7 @@ impl ITfSource_Impl for TextServiceFactory_Impl {
         }
         if let Ok(mut inner) = self.inner.try_borrow_mut() {
             inner.langbar_sink = None;
+            crate::tsf::theme::stop();
         }
         Ok(())
     }

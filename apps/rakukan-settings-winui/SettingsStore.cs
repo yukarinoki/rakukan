@@ -562,7 +562,7 @@ internal sealed class SettingsStore
         _ => "off",
     };
 
-    private static KeymapSettings LoadKeymap(TomlTable root)
+    internal static KeymapSettings LoadKeymap(TomlTable root)
     {
         var preset = GetString(root, "preset") ?? "ms-ime-jis";
         var inheritPreset = GetBool(root, "inherit_preset") ?? true;
@@ -595,8 +595,17 @@ internal sealed class SettingsStore
         return settings;
     }
 
-    private static void SaveKeymap(TomlTable root, KeymapSettings settings)
+    internal static void SaveKeymap(TomlTable root, KeymapSettings settings)
     {
+        // Visible fields are authoritative. Hidden extra/preserved bindings must
+        // not take the same key back when the file is read with last-wins rules.
+        var primaryKeys = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var action in ManagedKeyActions.All)
+        {
+            var primary = settings.GetBinding(action);
+            if (!string.IsNullOrWhiteSpace(primary) && !primaryKeys.Add(NormalizeKeyIdentity(primary)))
+                throw new InvalidOperationException($"キー「{primary}」が複数の操作に割り当てられています。別のキーを指定してください。");
+        }
         root["preset"] = settings.Preset;
         root["inherit_preset"] = settings.InheritPreset;
 
@@ -606,7 +615,7 @@ internal sealed class SettingsStore
             foreach (var item in existingBindings.OfType<TomlTable>())
             {
                 var action = ManagedKeyActions.FromActionName(GetString(item, "action"));
-                if (action is null)
+                if (action is null && !primaryKeys.Contains(NormalizeKeyIdentity(GetString(item, "key") ?? "")))
                 {
                     preserved.Add(item);
                 }
@@ -633,7 +642,7 @@ internal sealed class SettingsStore
 
             if (settings.ManagedExtras.TryGetValue(ManagedKeyActions.ActionName(action), out var extras))
             {
-                foreach (var extra in extras.Where(extra => !string.Equals(extra, primary, StringComparison.OrdinalIgnoreCase)))
+                foreach (var extra in extras.Where(extra => !primaryKeys.Contains(NormalizeKeyIdentity(extra))))
                 {
                     newBindings.Add(new TomlTable
                     {
@@ -646,6 +655,14 @@ internal sealed class SettingsStore
 
         root["bindings"] = newBindings;
     }
+
+    private static string NormalizeKeyIdentity(string key) => string.Join("+", key.Split('+')
+        .Select(part => part.Trim().ToLowerInvariant() switch
+        {
+            "control" => "ctrl", "lcontrol" => "lctrl", "rcontrol" => "rctrl",
+            "esc" => "escape", "return" => "enter", "capslock" => "caps",
+            var name => name,
+        }).OrderBy(part => part, StringComparer.Ordinal));
 
     private static string? GetString(TomlTable table, string key)
     {
