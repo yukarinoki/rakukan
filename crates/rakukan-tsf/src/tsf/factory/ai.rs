@@ -249,7 +249,6 @@ fn start(s: &mut Session) {
     let cancel = s.cancel.clone();
     let (tx, rx) = mpsc::channel();
     s.rx = Some(rx);
-    s.result = None;
     s.page = 0;
     s.message = "AI生成中… 文字入力で補正・Escで取消".into();
     let request = serde_json::json!({"text":target.text,"instruction":s.last_instruction,"previous":s.previous,"append":s.append,"language":s.language});
@@ -359,33 +358,40 @@ fn render() {
     let view = SESSION.with(|s| {
         let s = s.borrow();
         let s = s.as_ref()?;
-        let instruction = format!("{}{}", s.instruction, s.input.full_text());
-        let text = if let Some(result) = &s.result {
-            wrap(&result.text, 24)
-                .into_iter()
-                .skip(s.page * 5)
-                .take(5)
-                .collect::<Vec<_>>()
-                .join("\n")
-        } else if s.rx.is_some() {
-            let chars: Vec<_> = s.last_instruction.chars().collect();
-            chars[chars.len().saturating_sub(120)..].iter().collect()
+        let instruction = if s.rx.is_some() {
+            s.last_instruction.clone()
         } else {
-            // Keep the input caret visible for long instructions.
-            let chars: Vec<_> = instruction.chars().collect();
-            chars[chars.len().saturating_sub(120)..].iter().collect()
+            format!("{}{}", s.instruction, s.input.full_text())
         };
-        Some(ai_window::View {
+        let chars: Vec<_> = instruction.chars().collect();
+        let input = ai_window::View {
             geometry: s.geometry.clone()?,
-            text,
-            replace: s.result.as_ref().is_some_and(|r| !r.append),
+            text: chars[chars.len().saturating_sub(120)..].iter().collect(),
+            replace: false,
             busy: s.rx.is_some(),
-            editing: s.rx.is_none() && s.result.is_none(),
-        })
+            editing: s.rx.is_none(),
+        };
+        if let Some(result) = &s.result {
+            let preview = ai_window::View {
+                geometry: s.geometry.clone()?,
+                text: wrap(&result.text, 24)
+                    .into_iter()
+                    .skip(s.page * 5)
+                    .take(5)
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+                replace: !result.append,
+                busy: false,
+                editing: false,
+            };
+            Some((preview, Some(input)))
+        } else {
+            Some((input, None))
+        }
     });
     // Native windows and COM may reenter TSF. Never retain a SESSION borrow here.
-    if let Some(view) = view {
-        ai_window::show(view);
+    if let Some((view, instruction)) = view {
+        ai_window::show(view, instruction);
     } else {
         ai_window::hide();
     }
@@ -427,6 +433,7 @@ unsafe fn geometry(
         return Err(E_FAIL.into());
     }
     Ok(ai_window::Geometry {
+        font: ai_window::source_font(),
         caret,
         lines,
         viewport,
@@ -550,9 +557,9 @@ fn wrap(text: &str, width: usize) -> Vec<String> {
         })
         .collect()
 }
-fn reject(s: &mut Session) {
-    if let Some(result) = s.result.take() {
-        s.previous = result.text;
+fn begin_correction(s: &mut Session) {
+    if let Some(result) = &s.result {
+        s.previous = result.text.clone();
     }
     s.cancel.store(true, Ordering::Relaxed);
     s.rx = None;
@@ -591,14 +598,14 @@ pub(super) fn key(vk: u16, action: Option<UserAction>) -> windows::core::Result<
             }
             0x09 => {
                 if s.rx.is_none() && (!s.last_instruction.is_empty() || s.result.is_some()) {
-                    if let Some(r) = s.result.take() {
-                        s.previous = r.text;
+                    if let Some(r) = &s.result {
+                        s.previous = r.text.clone();
                     }
                     start(s)
                 }
             }
             0x08 => {
-                reject(s);
+                begin_correction(s);
                 if s.input.full_text().is_empty() {
                     s.instruction.pop();
                 } else {
@@ -615,7 +622,7 @@ pub(super) fn key(vk: u16, action: Option<UserAction>) -> windows::core::Result<
                 s.page = (s.page + 1).min(max)
             }
             0x20 => {
-                reject(s);
+                begin_correction(s);
                 s.input.flush();
                 let hira = s.input.full_text();
                 // Dictionary-only conversion: never reset the app's main preedit.
@@ -632,7 +639,7 @@ pub(super) fn key(vk: u16, action: Option<UserAction>) -> windows::core::Result<
             }
             _ => {
                 if let Some(UserAction::Input(c) | UserAction::InputRaw(c)) = action {
-                    reject(s);
+                    begin_correction(s);
                     if s.instruction.len() + s.input.full_text().len() < 6000 {
                         s.input.push(c);
                     }
@@ -752,7 +759,7 @@ mod tests {
         assert_eq!(enter_intent(false, false, false), EnterIntent::Wait);
     }
     #[test]
-    fn rejecting_result_preserves_correction_context_and_cancels_old_request() {
+    fn correction_keeps_preview_and_cancels_old_request() {
         let cancel = Arc::new(AtomicBool::new(false));
         let mut s = Session {
             target: None,
@@ -776,8 +783,8 @@ mod tests {
             geometry_checked: std::time::Instant::now(),
             page: 2,
         };
-        reject(&mut s);
-        assert!(s.result.is_none());
+        begin_correction(&mut s);
+        assert_eq!(s.result.as_ref().unwrap().text, "Previous English");
         assert!(cancel.load(Ordering::Relaxed));
         assert_eq!(s.previous, "Previous English");
         assert_eq!(s.last_instruction, "えいご");
