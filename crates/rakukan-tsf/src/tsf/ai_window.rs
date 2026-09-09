@@ -61,6 +61,18 @@ unsafe fn font(height: i32) -> HFONT {
         w!("Yu Gothic UI"),
     )
 }
+// DrawTextW may dereference lpchText even when cchText is zero. An empty Rust
+// Vec has a dangling (usually 0x2) pointer, not a readable empty UTF-16 string.
+unsafe fn draw_text(dc: HDC, text: &mut [u16], rect: &mut RECT, flags: DRAW_TEXT_FORMAT) -> i32 {
+    if text.is_empty() {
+        if flags.contains(DT_CALCRECT) {
+            rect.right = rect.left;
+            rect.bottom = rect.top;
+        }
+        return 0;
+    }
+    unsafe { DrawTextW(dc, text, rect, flags) }
+}
 unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
     match msg {
         WM_NCHITTEST => LRESULT(HTTRANSPARENT as isize),
@@ -102,7 +114,7 @@ unsafe fn draw(hwnd: HWND, dc: HDC) {
         if editing {
             text.push('│' as u16);
         }
-        DrawTextW(dc, &mut text, &mut rect, DT_WORDBREAK | DT_NOPREFIX);
+        draw_text(dc, &mut text, &mut rect, DT_WORDBREAK | DT_NOPREFIX);
         SelectObject(dc, old);
         let _ = DeleteObject(font);
     }
@@ -171,7 +183,7 @@ fn show_impl(view: View, visible: bool) {
             right: width,
             ..Default::default()
         };
-        DrawTextW(
+        draw_text(
             dc,
             &mut buffer,
             &mut measured,
@@ -293,6 +305,86 @@ fn show_impl(view: View, visible: bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn empty_text_never_enters_gdi_and_has_zero_measured_extent() {
+        let mut rect = RECT {
+            left: 10,
+            top: 20,
+            right: 400,
+            bottom: 200,
+        };
+        unsafe {
+            assert_eq!(
+                draw_text(
+                    HDC::default(),
+                    &mut [],
+                    &mut rect,
+                    DT_CALCRECT | DT_WORDBREAK
+                ),
+                0
+            );
+            assert_eq!(rect.right, rect.left);
+            assert_eq!(rect.bottom, rect.top);
+            let before = rect;
+            assert_eq!(
+                draw_text(HDC::default(), &mut [], &mut rect, DT_WORDBREAK),
+                0
+            );
+            assert_eq!(rect, before);
+        }
+    }
+    #[test]
+    #[ignore = "requires a Windows desktop; creates only hidden windows"]
+    fn empty_initial_generation_and_empty_reply_desktop_regression() {
+        let geometry = Geometry {
+            caret: RECT {
+                left: 100,
+                top: 100,
+                right: 101,
+                bottom: 130,
+            },
+            lines: vec![RECT {
+                left: 40,
+                top: 100,
+                right: 100,
+                bottom: 130,
+            }],
+            viewport: RECT {
+                left: 0,
+                top: 0,
+                right: 1000,
+                bottom: 800,
+            },
+        };
+        for (text, busy, editing, replace) in [
+            ("", true, false, false), // entering AI: default generation, no instruction yet
+            ("", false, false, false), // empty append response
+            ("", false, false, true), // empty replacement response
+            ("", false, true, false), // clear/backspace: instruction caret only
+            ("えいご", true, false, false),
+            ("English", false, false, true),
+        ] {
+            show_impl(
+                View {
+                    geometry: geometry.clone(),
+                    text: text.into(),
+                    busy,
+                    editing,
+                    replace,
+                },
+                false,
+            );
+            let hwnd = SURFACE.with(|s| s.borrow().as_ref().unwrap().hwnd);
+            unsafe {
+                assert!(!IsWindowVisible(hwnd).as_bool());
+                let dc = GetDC(hwnd);
+                assert!(!dc.is_invalid());
+                draw(hwnd, dc);
+                ReleaseDC(hwnd, dc);
+            }
+        }
+        hide();
+    }
     #[test]
     #[ignore = "requires a Windows desktop; creates only hidden windows"]
     fn inline_masks_and_dpi_desktop_regression() {
