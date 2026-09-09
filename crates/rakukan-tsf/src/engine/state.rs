@@ -777,6 +777,7 @@ pub fn is_auto_learn_enabled() -> bool {
 ///
 /// - 学習する: `Bg`（LLM 完了）/ `Dict`（辞書直接）/ `LivePreview`（LiveConv 引き継ぎ、信頼度は中だが LLM 由来）
 /// - 学習しない: `Preedit` / `Fallback` / `Reconversion`
+///
 /// 読みそのものを選んだ場合は `learning_decision` で別途許可する。
 pub fn is_candidate_learning_target(source: CandidateViewSource) -> bool {
     use CandidateViewSource::*;

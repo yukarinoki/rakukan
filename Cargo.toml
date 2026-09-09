@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/rakukan-romaji",
     "crates/rakukan-dict",
     "crates/rakukan-dict-builder",
     "crates/rakukan-engine",

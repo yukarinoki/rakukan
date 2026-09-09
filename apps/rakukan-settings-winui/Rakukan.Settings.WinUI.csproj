@@ -20,6 +20,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="..\rakukan-ai\AiConfig.cs" Link="AI\AiConfig.cs" />
+    <Compile Include="..\rakukan-ai\AiBackend.cs" Link="AI\AiBackend.cs" />
+    <Compile Include="..\rakukan-ai\AiSecret.cs" Link="AI\AiSecret.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.6.250205002" />
     <PackageReference Include="Tomlyn" Version="0.17.0" />
   </ItemGroup>

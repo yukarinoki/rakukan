@@ -145,6 +145,12 @@ if (Test-Path $engineHost) {
 }
 
 # Settings GUI (WinUI 3 app folder)
+$aiDir = Join-Path $InstallDir "ai"
+if (Test-Path $aiDir) {
+    New-Item -ItemType Directory -Force -Path "$distDir\ai" | Out-Null
+    Copy-Item "$aiDir\*" "$distDir\ai\" -Recurse -Force
+} else { Write-Warning "AI bridge not found: $aiDir" }
+
 $settingsDir = Join-Path $InstallDir "settings-ui"
 if (Test-Path $settingsDir) {
     New-Item -ItemType Directory -Force -Path "$distDir\settings-ui" | Out-Null

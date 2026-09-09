@@ -12,6 +12,7 @@ description = "rakukan 変換エンジン（karukan-engine 統合済み）"
 crate-type = ["rlib", "cdylib"]
 
 [dependencies]
+rakukan-romaji = { path = "../rakukan-romaji" }
 anyhow         = { workspace = true }
 thiserror      = { workspace = true }
 tracing        = { workspace = true }

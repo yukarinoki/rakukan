@@ -9,6 +9,7 @@ crate-type = ["cdylib"]
 name = "rakukan_tsf"
 
 [dependencies]
+rakukan-romaji = { path = "../rakukan-romaji" }
 # Engine との通信は rakukan-engine-rpc 経由の Named Pipe のみ。
 # rakukan-engine-abi には依存しない（= rakukan_engine_*.dll を TSF プロセスに
 # 持ち込まない）。これが Zoom / Dropbox クラッシュの恒久対策の本体。
@@ -16,6 +17,7 @@ rakukan-engine-rpc = { path = "../rakukan-engine-rpc" }
 anyhow = "1"
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
+serde_json = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 windows-core = "0.58.0"

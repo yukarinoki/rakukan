@@ -52,6 +52,16 @@ jobs:
       - name: Clippy（静的解析）
         run: cargo clippy --workspace -- -D warnings
 
+  ai-tests:
+    name: AI bridge tests (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - run: dotnet run --project apps/rakukan-ai-tests/rakukan-ai-tests.csproj -c Release
+
   # ── フォーマットチェック（Linux で高速に実行）──
   fmt:
     name: Format Check
