@@ -22,7 +22,6 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
-            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
         <InfoBar
@@ -44,11 +43,20 @@
             IsPaneToggleButtonVisible="False"
             SelectionChanged="OnNavigationSelectionChanged">
             <NavigationView.PaneFooter>
-                <TextBlock
-                    x:Name="VersionText"
-                    Margin="12,8,12,16"
-                    FontSize="12"
-                    Opacity="0.5" />
+                <StackPanel Margin="12,8,12,16" Spacing="10">
+                    <TextBlock
+                        x:Name="VersionText"
+                        FontSize="12"
+                        Opacity="0.5" />
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Button Click="SaveButton_Click" Content="保存" HorizontalAlignment="Stretch" Style="{StaticResource AccentButtonStyle}" />
+                        <Button Grid.Column="1" Click="CloseButton_Click" Content="閉じる" HorizontalAlignment="Stretch" />
+                    </Grid>
+                </StackPanel>
             </NavigationView.PaneFooter>
             <NavigationView.MenuItems>
                 <NavigationViewItem Tag="General" Content="基本">
@@ -564,24 +572,5 @@
             </Grid>
         </NavigationView>
 
-        <Border
-            Grid.Row="2"
-            Margin="12,0,12,0"
-            Padding="12,10"
-            Background="{ThemeResource LayerFillColorDefaultBrush}"
-            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-            BorderThickness="0,1,0,0">
-            <Grid ColumnSpacing="10">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-
-                <TextBlock TextWrapping="Wrap" VerticalAlignment="Center" Opacity="0.7" Text="変更内容は保存時または画面を閉じたときに、現在の IME へ反映されます。" />
-                <Button Grid.Column="1" Click="SaveButton_Click" Content="保存" Style="{StaticResource AccentButtonStyle}" />
-                <Button Grid.Column="2" Click="CloseButton_Click" Content="閉じる" />
-            </Grid>
-        </Border>
     </Grid>
 </Window>
