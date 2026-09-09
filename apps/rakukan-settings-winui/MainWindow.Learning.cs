@@ -20,6 +20,7 @@ public sealed partial class MainWindow
     {
         if (_learningBusy) return;
         _learningBusy = true;
+        LearningStatus.IsOpen = false;
         LearningProgress.IsActive = true;
         foreach (var button in LearningToolbar.Children.OfType<Button>()) button.IsEnabled = false;
         LearningReloadButton.IsEnabled = false;
@@ -86,14 +87,6 @@ public sealed partial class MainWindow
         if (!_learningBusy && LearningList.SelectedItem is LearningEntry entry) await EditLearningAsync(entry);
     }
 
-    private void LearningSuccess(string message)
-    {
-        LearningStatus.Severity = InfoBarSeverity.Success;
-        LearningStatus.Title = message;
-        LearningStatus.Message = "次の変換から反映されます。";
-        LearningStatus.IsOpen = true;
-    }
-
     private async Task EditLearningAsync(LearningEntry? existing)
     {
         var reading = new TextBox { Header = "読み", PlaceholderText = "あるの", Text = existing?.Reading ?? "", MaxLength = 128 };
@@ -122,7 +115,6 @@ public sealed partial class MainWindow
             await LearningHistoryClient.SendAsync(new { op = "save", original_reading = existing?.Reading,
                 original_surface = existing?.Surface, reading = reading.Text.Trim(), surface = surface.Text.Trim() });
             await LoadLearningAsync();
-            LearningSuccess($"「{surface.Text.Trim()}」を優先するよう保存しました");
         });
     }
 
@@ -134,7 +126,6 @@ public sealed partial class MainWindow
             await LearningHistoryClient.SendAsync(new { op = "save", original_reading = entry.Reading,
                 original_surface = entry.Surface, reading = entry.Reading, surface = entry.Surface });
             await LoadLearningAsync();
-            LearningSuccess($"「{entry.Surface}」を優先しました");
         });
     }
 
@@ -149,7 +140,6 @@ public sealed partial class MainWindow
         {
             await LearningHistoryClient.SendAsync(new { op = "delete", reading = entry.Reading, surface = entry.Surface });
             await LoadLearningAsync();
-            LearningSuccess($"「{entry.Surface}」の学習を削除しました");
         });
     }
 }
