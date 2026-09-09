@@ -734,6 +734,29 @@ impl RakunEngine {
         }
     }
 
+    pub fn manage_learning(&self, json: &str) -> String {
+        let result = (|| -> anyhow::Result<serde_json::Value> {
+            let command: rakukan_dict::store::LearningCommand = serde_json::from_str(json)?;
+            if let rakukan_dict::store::LearningCommand::Save {
+                reading, surface, ..
+            } = &command
+            {
+                anyhow::ensure!(
+                    !date_candidates::is_dynamic(reading, surface),
+                    "日付・時刻の候補は学習履歴に固定できません"
+                );
+            }
+            self.dict_store
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("辞書を読み込めていません"))?
+                .manage_learning(command)
+        })();
+        match result {
+            Ok(value) => value.to_string(),
+            Err(error) => serde_json::json!({"error": error.to_string()}).to_string(),
+        }
+    }
+
     pub fn is_dict_ready(&self) -> bool {
         self.dict_store.is_some()
     }
@@ -1370,6 +1393,21 @@ mod candidate_merge_tests {
     use super::{EngineConfig, RakunEngine};
     use rakukan_dict::DictStore;
     use std::fs;
+
+    #[test]
+    fn learned_hiragana_precedes_llm_katakana_without_duplicate() {
+        let mut engine = RakunEngine::new(EngineConfig::default());
+        engine.set_dict_store(DictStore::empty());
+        engine.learn("あるの", "あるの");
+        let merged = engine.merge_candidates_for_reading(
+            "あるの",
+            vec!["アルノ".into(), "あるの".into()],
+            40,
+        );
+        assert_eq!(merged.first().map(String::as_str), Some("あるの"));
+        assert_eq!(merged.iter().filter(|s| s.as_str() == "あるの").count(), 1);
+        assert!(merged.iter().any(|s| s == "アルノ"));
+    }
 
     #[test]
     fn merge_candidates_pads_short_list_with_original_reading() {

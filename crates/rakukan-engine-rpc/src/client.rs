@@ -642,6 +642,35 @@ impl Connection {
 }
 
 /// `rakukan-engine-host.exe` を install_dir から detached で起動する。
+/// One-shot settings request. Do not send Create: that could replace an active
+/// engine's config or preedit. Mutations are never retried after an uncertain reply.
+pub fn manage_learning(command: String) -> Result<String> {
+    let name = pipe_name_for_current_user();
+    let mut stream = match PipeStream::connect_client(&name, Duration::from_millis(200)) {
+        Ok(stream) => stream,
+        Err(_) => {
+            spawn_host()?;
+            PipeStream::connect_client(&name, Duration::from_secs(5))?
+        }
+    };
+    write_frame(
+        &mut stream,
+        &Request::Hello {
+            protocol_version: PROTOCOL_VERSION,
+        },
+    )?;
+    match read_frame::<_, Response>(&mut stream)? {
+        Response::Hello { protocol_version } if protocol_version == PROTOCOL_VERSION => {}
+        _ => bail!("エンジンホストの更新が必要です"),
+    }
+    write_frame(&mut stream, &Request::ManageLearning { command })?;
+    match read_frame::<_, Response>(&mut stream)? {
+        Response::String(json) => Ok(json),
+        Response::Error(error) => bail!("{error}"),
+        other => bail!("unexpected learning response: {other:?}"),
+    }
+}
+
 fn spawn_host() -> Result<()> {
     let install =
         rakukan_engine_abi::install_dir().ok_or_else(|| anyhow!("install_dir not found"))?;

@@ -17,6 +17,9 @@ use tracing::{debug, info, warn};
 use crate::mozc_dict::MozcDict;
 use crate::user_dict::UserDict;
 
+mod learning;
+pub use learning::LearningCommand;
+
 /// 学習履歴に保持するエントリ数の上限。mozc の kLruCacheSize に合わせて 30,000 件。
 /// これを超える場合は `last_access_time` が最古のエントリから削除する。
 const LEARN_LRU_CAPACITY: usize = 30_000;
@@ -427,8 +430,8 @@ impl DictStore {
 
     /// 確定した候補を学習履歴に記録する。
     ///
-    /// 学習対象は MOZC 辞書またはユーザー辞書に `(reading → surface)` が存在する候補のみ。
-    /// LLM 由来や数字/リテラル由来の surface は dict lookup にヒットせず、学習をスキップする。
+    /// 辞書に存在する候補に加え、読みと同じひらがな、カタカナ・英数・記号も学習する。
+    /// 辞書外の漢字や、読みと異なるひらがなを含む生成結果には辞書ガードを適用する。
     ///
     /// 動作:
     /// - `learn_history[reading]` に `LearnEntry` を追加 or 既存エントリを更新。
@@ -558,6 +561,16 @@ impl DictStore {
     /// ただし、括弧ペア（`『』` `《》` `«»` など）のような**記号のみからなる surface** は
     /// LLM 由来であっても誤学習リスクが低いため、辞書外でも学習を許可する。
     fn is_dict_surface(&self, reading: &str, surface: &str) -> bool {
+        // 「あるの → あるの」のように、変換せず使う好みも辞書登録なしで学習する。
+        // 空文字や漢字の同一文字列をこの例外で通さない。
+        if reading == surface
+            && !surface.is_empty()
+            && surface
+                .chars()
+                .all(|c| ('ぁ'..='ゖ').contains(&c) || matches!(c, 'ー' | 'ゝ' | 'ゞ'))
+        {
+            return true;
+        }
         self.reload_user_if_changed();
         if let Ok(user) = self.inner.user.read()
             && user
@@ -882,6 +895,34 @@ mod tests {
 
         assert_eq!(store.lookup_user("かっこ"), vec!["『", "《"]);
         assert_eq!(store.lookup_user("かっことじ"), vec!["』"]);
+    }
+
+    #[test]
+    fn hiragana_choice_is_persisted_and_can_overtake_katakana() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("learn_history.bin");
+        let store = DictStore::load(None, None, Some(&path)).unwrap();
+        for _ in 0..5 {
+            store.learn("あるの", "アルノ");
+        }
+        store.learn("あるの", "あるの");
+        assert!(store.lookup_learn("あるの").contains(&"あるの".to_string()));
+        for _ in 0..5 {
+            store.learn("あるの", "あるの");
+        }
+        drop(store);
+        let reloaded = DictStore::load(None, None, Some(&path)).unwrap();
+        assert_eq!(reloaded.lookup_learn("あるの"), ["あるの", "アルノ"]);
+        assert!(reloaded.lookup_user("あるの").is_empty());
+    }
+
+    #[test]
+    fn hiragana_identity_exception_does_not_allow_unrelated_surfaces() {
+        let store = DictStore::empty();
+        for (reading, surface) in [("", ""), ("あるの", "いるの"), ("漢字", "漢字")] {
+            store.learn(reading, surface);
+            assert!(store.lookup_learn(reading).is_empty());
+        }
     }
 
     #[test]

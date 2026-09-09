@@ -1670,6 +1670,15 @@ impl super::TextServiceFactory_Impl {
             preedit: preedit.clone(),
         });
         engine.bg_reclaim();
+        // F6 / 変換取り消し後の Enter も、ひらがなを使う選択として記録する。
+        let reading = engine.hiragana_text();
+        if crate::engine::state::should_learn_and_log(
+            &reading,
+            &preedit,
+            Some(crate::engine::state::CandidateViewSource::Preedit),
+        ) {
+            engine.learn(&reading, &preedit);
+        }
         engine.commit(&preedit.clone());
         engine.reset_preedit();
         drop(guard);

@@ -236,6 +236,10 @@ pub enum Request {
     ReverseReading {
         text: String,
     },
+    /// Settings-only additive extension. Never resets the active composition/config.
+    ManageLearning {
+        command: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

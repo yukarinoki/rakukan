@@ -212,6 +212,7 @@ fn request_label(req: &Request) -> &'static str {
         Learn { .. } => "Learn",
         LearnForce { .. } => "LearnForce",
         ReverseReading { .. } => "ReverseReading",
+        ManageLearning { .. } => "ManageLearning",
         MergeCandidatesForReading { .. } => "MergeCandidatesForReading",
         LastError => "LastError",
         DictStatus => "DictStatus",
@@ -275,6 +276,27 @@ fn dispatch(engine: &SharedEngine, req: Request) -> Response {
                 );
                 Response::Bool(true)
             }
+        }
+        Request::ManageLearning { command } => {
+            let mut g = lock_engine(engine);
+            if g.engine.is_none() {
+                let response = load_engine_into(engine, &mut g, None);
+                if matches!(response, Response::Error(_)) {
+                    return response;
+                }
+            }
+            let eng = g.engine.as_mut().expect("engine loaded");
+            eng.start_load_dict();
+            let deadline = std::time::Instant::now() + Duration::from_secs(10);
+            while !eng.poll_dict_ready() {
+                if std::time::Instant::now() >= deadline {
+                    return Response::Error(
+                        "辞書の読み込みが完了しませんでした。再読み込みしてください".into(),
+                    );
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            dispatch_engine(eng, Request::ManageLearning { command })
         }
         other => {
             let mut g = match engine.state.lock() {
@@ -460,6 +482,10 @@ fn dispatch_engine(eng: &mut DynEngine, req: Request) -> Response {
             Response::Unit
         }
         ReverseReading { text } => Response::Strings(eng.reverse_readings(&text)),
+        ManageLearning { command } => match eng.manage_learning(&command) {
+            Ok(json) => Response::String(json),
+            Err(error) => Response::Error(error.to_string()),
+        },
         MergeCandidatesForReading {
             reading,
             llm_cands,

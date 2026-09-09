@@ -222,6 +222,20 @@ fn install_panic_hook() {
 }
 
 fn main() -> Result<()> {
+    // The settings window starts this short-lived bridge with redirected UTF-8
+    // stdin/stdout. It talks to the existing host, without loading another DLL.
+    if std::env::args().nth(1).as_deref() == Some("--manage-learning") {
+        use std::io::{Read, Write};
+        let result = (|| -> Result<String> {
+            let mut command = String::new();
+            std::io::stdin().take(65537).read_to_string(&mut command)?;
+            anyhow::ensure!(command.len() <= 65536, "learning command too large");
+            rakukan_engine_rpc::client::manage_learning(command)
+        })();
+        let response = result.unwrap_or_else(|e| serde_json::json!({"error": e.to_string()}).to_string());
+        std::io::stdout().write_all(response.as_bytes())?;
+        return Ok(());
+    }
     let log_path = log_path();
     init_tracing(&log_path);
     install_panic_hook();

@@ -7,6 +7,20 @@ void Check(bool condition, string message) { if (!condition) throw new Exception
 string FileAt(string name) => Path.Combine(directory, name);
 try
 {
+    var learningJson = LearningHistoryClient.ParseResponse("""
+        {"entries":[{"reading":"あるの","surface":"アルノ","last_access_time":1788959706,"frequency":4.99},
+        {"reading":"あるの","surface":"あるの","last_access_time":1788959707,"frequency":6}]}
+        """);
+    var learning = System.Text.Json.JsonSerializer.Deserialize<List<LearningEntry>>(learningJson.GetProperty("entries"))!;
+    Check(learning.Count == 2 && learning[0].Frequency == 4.99 && learning[0].LastUsed != "—", "learning JSON/UTF-8/date");
+    Check(LearningHistoryClient.Filter(learning, " あるの ").Count == 2, "learning reading search");
+    Check(LearningHistoryClient.Filter(learning, "アルノ").Count == 1, "learning surface search");
+    Check(LearningHistoryClient.Filter(learning, "見つからない").Count == 0, "learning empty search");
+    try { LearningHistoryClient.ParseResponse("{\"error\":\"保存できません\"}"); throw new Exception("ignored server error"); }
+    catch (InvalidOperationException ex) { Check(ex.Message == "保存できません", "learning server error"); }
+    try { LearningHistoryClient.ParseResponse(""); throw new Exception("accepted empty old-host response"); }
+    catch (InvalidOperationException) { }
+    Console.WriteLine("Learning history parsing, search, error and old-host response tests PASS");
     var appearanceRoot = Tomlyn.Toml.ToModel("[appearance]\ncandidate_font_height=33\ncaret_width_enabled=true\ncaret_on_width=6\ncaret_off_width=2\n");
     var settings = SettingsStore.LoadConfig(appearanceRoot);
     Check(settings.CaretWidthEnabled && settings.CaretOnWidth == 6 && settings.CaretOffWidth == 2 && settings.CandidateFontHeight == 33, "appearance load");

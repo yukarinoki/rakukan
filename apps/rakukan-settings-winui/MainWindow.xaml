@@ -89,6 +89,9 @@
                         <SymbolIcon Symbol="Library" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
+                <NavigationViewItem Tag="Learning" Content="学習履歴">
+                    <NavigationViewItem.Icon><SymbolIcon Symbol="Clock" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
                 <NavigationViewItem Tag="Advanced" Content="補足">
                     <NavigationViewItem.Icon>
                         <SymbolIcon Symbol="Document" />
@@ -319,11 +322,62 @@
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
                                 <TextBlock Text="変換確定時に学習する" TextWrapping="Wrap" VerticalAlignment="Center" />
-                                <ToggleSwitch x:Name="AutoLearnToggle" Grid.Column="1" MinWidth="44" OnContent="" OffContent="" AutomationProperties.Name="変換確定時に学習する" />
+                                <Button Grid.Column="1" Content="学習履歴へ" Click="OpenLearning_Click" />
                             </Grid>
                         </StackPanel>
                     </StackPanel>
                 </ScrollViewer>
+
+                <Grid x:Name="LearningPage" Visibility="Collapsed" Margin="20,16,20,20" RowSpacing="10">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid ColumnSpacing="12">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                        <StackPanel Spacing="4">
+                            <TextBlock Style="{StaticResource SettingsPageTitle}" Text="学習履歴" />
+                            <TextBlock Text="使いたい表記を、自分に合わせる。" Opacity="0.7" />
+                        </StackPanel>
+                        <Button x:Name="LearningReloadButton" Grid.Column="1" Content="再読み込み" Click="LearningReload_Click" VerticalAlignment="Center" />
+                    </Grid>
+                    <Grid Grid.Row="1">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                        <TextBlock Text="変換確定時に学習する" VerticalAlignment="Center" />
+                        <ToggleSwitch x:Name="AutoLearnToggle" Grid.Column="1" MinWidth="44" OnContent="" OffContent="" AutomationProperties.Name="変換確定時に学習する" />
+                    </Grid>
+                    <TextBox x:Name="LearningSearch" Grid.Row="2" PlaceholderText="読み・表記で検索（例：あるの）" TextChanged="LearningSearch_TextChanged" AutomationProperties.Name="学習履歴を検索" />
+                    <StackPanel x:Name="LearningToolbar" Grid.Row="3" Orientation="Horizontal" Spacing="6">
+                        <Button Content="追加" Click="LearningAdd_Click" />
+                        <Button x:Name="LearningEditButton" Content="編集" Click="LearningEdit_Click" IsEnabled="False" />
+                        <Button x:Name="LearningPreferButton" Content="優先する" Click="LearningPrefer_Click" IsEnabled="False" />
+                        <Button x:Name="LearningDeleteButton" Content="削除" Click="LearningDelete_Click" IsEnabled="False" />
+                    </StackPanel>
+                    <InfoBar x:Name="LearningStatus" Grid.Row="4" IsOpen="False" IsClosable="True" />
+                    <Grid Grid.Row="5">
+                        <ListView x:Name="LearningList" SelectionMode="Single" SelectionChanged="LearningList_SelectionChanged" DoubleTapped="LearningList_DoubleTapped" HorizontalContentAlignment="Stretch" AutomationProperties.Name="学習候補の一覧">
+                            <ListView.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Padding="0,6" ColumnSpacing="12">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="2">
+                                            <TextBlock Text="{Binding Surface}" FontSize="16" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Text="{Binding Reading}" FontSize="12" Opacity="0.65" TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                        <TextBlock Grid.Column="1" Text="{Binding LastUsed}" FontSize="12" Opacity="0.6" VerticalAlignment="Center" ToolTipService.ToolTip="最終使用日時" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+                        <TextBlock x:Name="LearningEmpty" Visibility="Collapsed" TextWrapping="Wrap" TextAlignment="Center" HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0.65" IsHitTestVisible="False" />
+                        <ProgressRing x:Name="LearningProgress" IsActive="False" Width="28" Height="28" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False" />
+                    </Grid>
+                    <StackPanel Grid.Row="6" Spacing="4">
+                        <TextBlock x:Name="LearningCount" FontSize="12" Opacity="0.65" />
+                        <TextBlock Text="履歴の編集はすぐ反映されます。自動学習の切替は「保存して閉じる」で保存します。" FontSize="12" Opacity="0.65" TextWrapping="Wrap" />
+                    </StackPanel>
+                </Grid>
 
                 <ScrollViewer x:Name="KeysPage" Visibility="Collapsed">
                     <StackPanel Style="{StaticResource SettingsPageLayout}">

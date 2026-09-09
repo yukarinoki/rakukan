@@ -245,6 +245,8 @@ public sealed partial class MainWindow : Window
         KeysPage.Visibility = tag == "Keys" ? Visibility.Visible : Visibility.Collapsed;
         LivePage.Visibility = tag == "Live" ? Visibility.Visible : Visibility.Collapsed;
         UserDictPage.Visibility = tag == "UserDict" ? Visibility.Visible : Visibility.Collapsed;
+        LearningPage.Visibility = tag == "Learning" ? Visibility.Visible : Visibility.Collapsed;
+        if (tag == "Learning") _ = RunLearningAsync(LoadLearningAsync);
         AdvancedPage.Visibility = tag == "Advanced" ? Visibility.Visible : Visibility.Collapsed;
     }
 

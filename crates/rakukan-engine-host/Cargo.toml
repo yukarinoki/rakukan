@@ -14,6 +14,7 @@ path = "src/main.rs"
 rakukan-engine-abi = { path = "../rakukan-engine-abi" }
 rakukan-engine-rpc = { path = "../rakukan-engine-rpc" }
 anyhow   = { workspace = true }
+serde_json = { workspace = true }
 tracing  = { workspace = true }
 tracing-subscriber = { workspace = true }
 

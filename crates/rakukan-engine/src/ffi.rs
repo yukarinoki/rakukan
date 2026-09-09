@@ -719,6 +719,19 @@ pub extern "C" fn engine_learn_force(
 
 // ─── 最後のエラーメッセージ（診断用）────────────────────────────────────────
 
+/// Settings history management. Uses the same host-owned store as conversion.
+#[unsafe(no_mangle)]
+pub extern "C" fn engine_manage_learning(
+    handle: *mut c_void,
+    command: *const c_char,
+) -> *mut c_char {
+    if handle.is_null() || command.is_null() {
+        return std::ptr::null_mut();
+    }
+    let engine = unsafe { &*(handle as *const RakunEngine) };
+    unsafe { to_cstr(engine.manage_learning(from_cstr(command))) }
+}
+
 static LAST_ERROR: LazyLock<Mutex<String>> = LazyLock::new(|| Mutex::new(String::new()));
 static DICT_STATUS: LazyLock<Mutex<String>> =
     LazyLock::new(|| Mutex::new("not started".to_string()));

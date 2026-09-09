@@ -776,7 +776,8 @@ pub fn is_auto_learn_enabled() -> bool {
 /// 学習対象から外し、学習履歴の汚染を抑える。
 ///
 /// - 学習する: `Bg`（LLM 完了）/ `Dict`（辞書直接）/ `LivePreview`（LiveConv 引き継ぎ、信頼度は中だが LLM 由来）
-/// - 学習しない: `Preedit`（`text == reading` のため通常は既存ガードで弾かれる、念のため）/ `Fallback`（sync 経路、品質が安定しない）
+/// - 学習しない: `Preedit` / `Fallback` / `Reconversion`
+/// 読みそのものを選んだ場合は `learning_decision` で別途許可する。
 pub fn is_candidate_learning_target(source: CandidateViewSource) -> bool {
     use CandidateViewSource::*;
     match source {
@@ -785,23 +786,83 @@ pub fn is_candidate_learning_target(source: CandidateViewSource) -> bool {
     }
 }
 
-/// 学習判定の中央ヘルパ。`auto_learn` 設定 / `text == reading` / `source` 判定を一括し、
+#[cfg(test)]
+mod learning_tests {
+    use super::{CandidateViewSource::*, learning_decision};
+
+    #[test]
+    fn hiragana_choice_is_learned_in_candidate_and_raw_commit_paths() {
+        for source in [
+            Some(Bg),
+            Some(Dict),
+            Some(LivePreview),
+            Some(Preedit),
+            Some(Fallback),
+            None,
+        ] {
+            assert!(
+                learning_decision(true, "あるの", "あるの", source),
+                "{source:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn disabled_empty_and_reconversion_commits_are_not_learned() {
+        assert!(!learning_decision(false, "あるの", "あるの", Some(Preedit)));
+        assert!(!learning_decision(true, "", "", Some(Preedit)));
+        assert!(!learning_decision(true, "あるの", "", Some(Bg)));
+        assert!(!learning_decision(
+            true,
+            "あるの",
+            "あるの",
+            Some(Reconversion)
+        ));
+        assert!(!learning_decision(
+            true,
+            "あるの",
+            "アルノ",
+            Some(Reconversion)
+        ));
+    }
+
+    #[test]
+    fn generated_fallbacks_keep_existing_learning_guard() {
+        for source in [Preedit, Fallback] {
+            assert!(!learning_decision(true, "あるの", "アルノ", Some(source)));
+        }
+        assert!(learning_decision(true, "あるの", "アルノ", Some(Bg)));
+    }
+}
+
+fn learning_decision(
+    auto_learn: bool,
+    reading: &str,
+    text: &str,
+    source: Option<CandidateViewSource>,
+) -> bool {
+    if !auto_learn || reading.is_empty() || text.is_empty() {
+        return false;
+    }
+    // 再変換は読みが曖昧なため、元の読みと一致しても学習しない。
+    if source == Some(CandidateViewSource::Reconversion) {
+        return false;
+    }
+    // 読みのまま確定する選択も好みとして記録する。辞書側のガードは維持する。
+    text == reading || source.map(is_candidate_learning_target).unwrap_or(true)
+}
+
+/// 学習判定の中央ヘルパ。`auto_learn` 設定 / 読みの明示確定 / `source` 判定を一括し、
 /// 観測ログ `learning_decision` を出す。`engine.learn()` を呼ぶ前に必ずこれを通す。
 ///
 /// `source = None` の場合（LiveConv 経路など `CandidateView` がない経路）は source 判定を
-/// skip し、従来通り auto_learn + text != reading だけで判断する。
+/// skip する。
 pub fn should_learn_and_log(
     reading: &str,
     text: &str,
     source: Option<CandidateViewSource>,
 ) -> bool {
-    if !is_auto_learn_enabled() {
-        return false;
-    }
-    if text == reading {
-        return false;
-    }
-    let learnable = source.map(is_candidate_learning_target).unwrap_or(true);
+    let learnable = learning_decision(is_auto_learn_enabled(), reading, text, source);
     tracing::info!(
         "learning_decision learn={} source={} reading_len={} text={:?}",
         learnable,

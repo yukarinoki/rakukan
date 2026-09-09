@@ -130,6 +130,7 @@ struct EngineVTable {
         unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char, u32) -> *mut c_char,
 
     reverse_readings: Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> *mut c_char>,
+    manage_learning: Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> *mut c_char>,
 
     // 非同期初期化
     start_load_model: unsafe extern "C" fn(*mut c_void),
@@ -231,6 +232,11 @@ impl EngineVTable {
                     .map(|symbol| *symbol)
             },
             start_load_model: load_sym!(lib, b"engine_start_load_model\0"),
+            manage_learning: unsafe {
+                lib.get(b"engine_manage_learning\0")
+                    .ok()
+                    .map(|symbol| *symbol)
+            },
             poll_model_ready: load_sym!(lib, b"engine_poll_model_ready\0"),
             start_load_dict: load_sym!(lib, b"engine_start_load_dict\0"),
             poll_dict_ready: load_sym!(lib, b"engine_poll_dict_ready\0"),
@@ -568,6 +574,16 @@ impl DynEngine {
                 .and_then(|json| serde_json::from_str(&json).ok())
                 .unwrap_or_default()
         }
+    }
+
+    pub fn manage_learning(&self, command: &str) -> Result<String> {
+        let function = self
+            .vtable
+            .manage_learning
+            .ok_or_else(|| anyhow::anyhow!("学習履歴の編集に対応したエンジン DLL が必要です"))?;
+        let command = Self::to_cstring(command);
+        unsafe { self.take_cstr(function(self.handle, command.as_ptr())) }
+            .ok_or_else(|| anyhow::anyhow!("学習履歴の応答がありません"))
     }
 
     pub fn merge_candidates_for_reading(

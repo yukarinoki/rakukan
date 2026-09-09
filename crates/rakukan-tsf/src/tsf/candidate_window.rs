@@ -1702,6 +1702,12 @@ fn is_dict_like_preview_candidate(candidates: &[String], reading: &str, preview:
     preview != reading && candidates.iter().any(|candidate| candidate == preview)
 }
 
+fn first_live_preview_candidate(candidates: &[String]) -> Option<String> {
+    // 学習済みのひらがなが先頭なら、その順位を尊重する。
+    // 未学習の読みは merge 側で末尾に補充されるので、ここで除外しない。
+    candidates.iter().find(|s| !s.is_empty()).cloned()
+}
+
 /// bg ワーカーが done で結果取得可能なら `true`、そうでなければ caller は return。
 ///
 /// - bg=done: そのまま続行
@@ -1804,16 +1810,9 @@ fn fetch_preview() -> Option<LivePreview> {
         let mut used_bg_candidate = false;
         let preview = if let Some(top) = eng.bg_peek_top_candidate(&reading) {
             used_bg_candidate = true;
-            eng.merge_candidates_for_reading(&reading, vec![top], 40)
-                .into_iter()
-                .next()
-                .filter(|s| !s.is_empty())
+            first_live_preview_candidate(&eng.merge_candidates_for_reading(&reading, vec![top], 40))
         } else {
-            dict_like_candidates
-                .iter()
-                .cloned()
-                .into_iter()
-                .find(|s| !s.is_empty() && s != &reading)
+            first_live_preview_candidate(&dict_like_candidates)
         };
         let keep_short_preview = preview
             .as_ref()
@@ -2116,6 +2115,19 @@ mod tests {
     use super::{
         FONT_HEIGHT_BASE, FONT_HEIGHT_MIN, Layout, fit_font_height, guard_preview_shrink, scaled_to,
     };
+
+    #[test]
+    fn live_preview_respects_learned_hiragana_rank() {
+        assert_eq!(
+            super::first_live_preview_candidate(&["あるの".into(), "アルノ".into()]),
+            Some("あるの".into())
+        );
+        assert_eq!(
+            super::first_live_preview_candidate(&["アルノ".into(), "あるの".into()]),
+            Some("アルノ".into())
+        );
+        assert_eq!(super::first_live_preview_candidate(&[]), None);
+    }
 
     #[test]
     fn dpi_scaling_preserves_readable_rows_and_work_area_fit() {
