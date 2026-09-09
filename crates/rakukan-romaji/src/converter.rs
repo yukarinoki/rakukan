@@ -1,6 +1,6 @@
 use super::rules::build_rules;
 use super::trie::TrieNode;
-use crate::kana::hiragana_to_katakana;
+use crate::hiragana_to_katakana;
 
 /// Events that can occur during conversion
 #[derive(Debug, Clone, PartialEq)]

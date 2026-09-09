@@ -1657,6 +1657,7 @@ dependencies = [
  "llama-cpp-2",
  "memmap2",
  "rakukan-dict",
+ "rakukan-romaji",
  "serde",
  "serde_json",
  "tempfile",
@@ -1718,6 +1719,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "rakukan-romaji"
+version = "0.11.4"
+
+[[package]]
 name = "rakukan-tray"
 version = "0.11.4"
 dependencies = [
@@ -1734,7 +1739,9 @@ dependencies = [
  "anyhow",
  "embed-resource",
  "rakukan-engine-rpc",
+ "rakukan-romaji",
  "serde",
+ "serde_json",
  "toml",
  "tracing",
  "tracing-subscriber",

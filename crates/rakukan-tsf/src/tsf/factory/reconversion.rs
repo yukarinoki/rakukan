@@ -77,8 +77,8 @@ pub(super) fn selected(ctx: &ITfContext, tid: u32) -> Option<(ITfRange, String)>
             .ok()
             .ok()?;
     }
-    let result = output.borrow_mut().take();
-    result
+
+    output.borrow_mut().take()
 }
 
 pub(super) fn begin(
@@ -128,10 +128,11 @@ pub(super) fn begin(
             .collect();
         for i in 0..40 {
             for group in &groups {
-                if let Some(c) = group.get(i) {
-                    if candidates.len() < 80 && !candidates.contains(c) {
-                        candidates.push(c.clone());
-                    }
+                if let Some(c) = group.get(i)
+                    && candidates.len() < 80
+                    && !candidates.contains(c)
+                {
+                    candidates.push(c.clone());
                 }
             }
         }
@@ -223,11 +224,11 @@ pub(super) fn cancel(ctx: ITfContext, tid: u32) -> anyhow::Result<bool> {
         composition.EndComposition(ec)?;
         let _ = state::composition_set(None);
         clear();
-        if let Ok(mut guard) = state::engine_get() {
-            if let Some(e) = guard.as_mut() {
-                e.bg_reclaim();
-                e.reset_preedit();
-            }
+        if let Ok(mut guard) = state::engine_get()
+            && let Some(e) = guard.as_mut()
+        {
+            e.bg_reclaim();
+            e.reset_preedit();
         }
         if let Ok(mut sess) = state::session_get() {
             sess.set_idle();

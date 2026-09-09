@@ -92,6 +92,7 @@
                 <NavigationViewItem Tag="Learning" Content="学習履歴">
                     <NavigationViewItem.Icon><SymbolIcon Symbol="Clock" /></NavigationViewItem.Icon>
                 </NavigationViewItem>
+                <NavigationViewItem Tag="AI" Content="AIモード"><NavigationViewItem.Icon><SymbolIcon Symbol="Edit" /></NavigationViewItem.Icon></NavigationViewItem>
                 <NavigationViewItem Tag="Advanced" Content="補足">
                     <NavigationViewItem.Icon>
                         <SymbolIcon Symbol="Document" />
@@ -620,6 +621,79 @@
                                 <Button Content="config.toml を開く" Click="OpenConfigButton_Click" />
                                 <Button Content="keymap.toml を開く" Click="OpenKeymapButton_Click" />
                             </StackPanel>
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <ScrollViewer x:Name="AiPage" Visibility="Collapsed">
+                    <StackPanel Style="{StaticResource SettingsPageLayout}">
+                        <TextBlock Style="{StaticResource SettingsPageTitle}" Text="AIモード" />
+                        <ToggleSwitch x:Name="AiEnabled" Header="AIモードを使う" />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <ToggleButton x:Name="AiConnectionTab" Content="接続" Tag="connection" IsChecked="True" Click="AiSection_Click" />
+                            <ToggleButton x:Name="AiCommandsTab" Content="コマンド" Tag="commands" Click="AiSection_Click" />
+                            <ToggleButton x:Name="AiTestTab" Content="動作確認" Tag="test" Click="AiSection_Click" />
+                        </StackPanel>
+                        <StackPanel x:Name="AiConnectionSection" Spacing="12">
+                        <TextBox x:Name="AiKey" Header="AIキー" PlaceholderText="Henkan / F10 / Ctrl+Shift+A" />
+                        <TextBlock TextWrapping="Wrap" Opacity="0.7" Text="有効時はAIキーを優先します。Henkanに割り当てたIME ON・再変換は使えなくなります。IME ONはひらがなキー等、再変換はCtrl+Shift+Rを使えます。" />
+                        <TextBlock TextWrapping="Wrap" Text="Enter：生成／指示追加がなければ採用　Tab：別候補　Esc：取消。文字入力で結果を不採用にして補正指示を入力します。" />
+                        <ComboBox x:Name="AiBackendCombo" Header="モデル接続" HorizontalAlignment="Stretch" SelectionChanged="AiBackend_Changed">
+                            <ComboBoxItem Tag="copilot" Content="Copilot Keyboard の起動中モデルを共有" />
+                            <ComboBoxItem Tag="local" Content="ローカル GGUF（llama-server）" />
+                            <ComboBoxItem Tag="remote" Content="外部 OpenAI互換サーバー" />
+                        </ComboBox>
+                        <TextBlock x:Name="AiCopilotNote" TextWrapping="Wrap" Opacity="0.7" Text="Copilot Keyboardを起動してモデルを有効にしてください。内部通信方式を使用するため、更新後は動作確認してください。接続失敗時に別モデルへ切り替えることはありません。" />
+                        <StackPanel x:Name="AiLocalFields" Spacing="8" Visibility="Collapsed">
+                            <TextBox x:Name="AiServerPath" Header="llama-server.exe のパス" />
+                            <Button Content="サーバーを選択…" Tag="server" Click="AiBrowse_Click" />
+                            <TextBox x:Name="AiModelPath" Header="GGUFモデルのパス" />
+                            <Button Content="モデルを選択…" Tag="model" Click="AiBrowse_Click" />
+                            <NumberBox x:Name="AiPort" Header="ローカルポート" Minimum="1" Maximum="65535" SpinButtonPlacementMode="Compact" />
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Button Content="起動・確認" Click="AiConnect_Click" />
+                                <Button Content="停止" Click="AiStop_Click" />
+                            </StackPanel>
+                            <TextBlock TextWrapping="Wrap" Opacity="0.7" Text="初回の生成時にも自動起動します。モデルのダウンロードは行いません。待機中はモデルを保持します。" />
+                        </StackPanel>
+                        <StackPanel x:Name="AiRemoteFields" Spacing="8" Visibility="Collapsed">
+                            <TextBox x:Name="AiUrl" Header="URL（ポートと /v1 を含む）" PlaceholderText="http://gpu-server:8080/v1" />
+                            <PasswordBox x:Name="AiApiKey" Header="API認証キー（必要な場合）" />
+                        </StackPanel>
+                        <TextBox x:Name="AiModelName" Header="サーバーのモデル名（外部／ローカル）" />
+                        <Grid ColumnSpacing="12">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                            <NumberBox x:Name="AiTimeout" Header="待機上限（秒）" Minimum="5" Maximum="600" />
+                            <NumberBox x:Name="AiMaxTokens" Grid.Column="1" Header="生成上限トークン" Minimum="16" Maximum="4096" />
+                        </Grid>
+                        </StackPanel>
+                        <StackPanel x:Name="AiCommandsSection" Spacing="12" Visibility="Collapsed">
+                        <TextBlock Style="{StaticResource SettingsSectionTitle}" Text="コマンド" />
+                        <ComboBox x:Name="AiCommands" DisplayMemberPath="Name" HorizontalAlignment="Stretch" SelectionChanged="AiCommand_Changed" />
+                        <TextBox x:Name="AiCommandName" Header="名前" />
+                        <TextBox x:Name="AiAliases" Header="別名（カンマ区切り）" />
+                        <TextBox x:Name="AiPrompt" Header="モデルへの指示" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="90" MaxHeight="160" />
+                        <ComboBox x:Name="AiCommandLanguage" Header="出力言語" HorizontalAlignment="Stretch">
+                            <ComboBoxItem Tag="japanese" Content="日本語" /><ComboBoxItem Tag="english" Content="英語" /><ComboBoxItem Tag="chinese" Content="中国語" /><ComboBoxItem Tag="korean" Content="韓国語" /><ComboBoxItem Tag="french" Content="フランス語" /><ComboBoxItem Tag="german" Content="ドイツ語" /><ComboBoxItem Tag="spanish" Content="スペイン語" />
+                        </ComboBox>
+                        <CheckBox x:Name="AiAppend" Content="元の文章の末尾に追加する（オフなら置換）" />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button Content="追加" Click="AiAddCommand_Click" />
+                            <Button Content="削除" Click="AiDeleteCommand_Click" />
+                        </StackPanel>
+                        </StackPanel>
+                        <StackPanel x:Name="AiTestSection" Spacing="12" Visibility="Collapsed">
+                        <TextBlock Style="{StaticResource SettingsSectionTitle}" Text="動作確認" />
+                        <TextBox x:Name="AiTestText" Header="テスト文章" Text="今日は晴れです。" TextWrapping="Wrap" AcceptsReturn="True" />
+                        <TextBox x:Name="AiTestInstruction" Header="指示（空欄なら続きを生成）" Text="えいご" />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button x:Name="AiConnectButton" Content="接続確認" Click="AiConnect_Click" />
+                            <Button x:Name="AiGenerateButton" Content="生成を試す" Click="AiGenerate_Click" />
+                            <Button Content="中止" Click="AiCancel_Click" />
+                            <ProgressRing x:Name="AiProgress" Width="24" Height="24" IsActive="False" />
+                        </StackPanel>
+                        <TextBlock x:Name="AiTestStatus" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                        <TextBox x:Name="AiTestOutput" IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True" MinHeight="80" MaxHeight="200" />
                         </StackPanel>
                     </StackPanel>
                 </ScrollViewer>

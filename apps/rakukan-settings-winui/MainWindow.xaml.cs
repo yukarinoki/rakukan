@@ -49,6 +49,7 @@ public sealed partial class MainWindow : Window
         _settings = _store.Load();
         UserDictList.ItemsSource = _userDictEntries;
         ApplySettingsToUi(_settings);
+        LoadAiSettings();
         WireStatusBarDismissal();
 
         if (RootNavigation.MenuItems.OfType<NavigationViewItem>().FirstOrDefault() is { } first)
@@ -253,6 +254,7 @@ public sealed partial class MainWindow : Window
 
     private void ShowPage(string tag)
     {
+        AiPage.Visibility = tag == "AI" ? Visibility.Visible : Visibility.Collapsed;
         GeneralPage.Visibility = tag == "General" ? Visibility.Visible : Visibility.Collapsed;
         AppearancePage.Visibility = tag == "Appearance" ? Visibility.Visible : Visibility.Collapsed;
         InputPage.Visibility = tag == "Input" ? Visibility.Visible : Visibility.Collapsed;
@@ -808,15 +810,19 @@ public sealed partial class MainWindow : Window
     {
         try
         {
+            var ai = CaptureAiSettings();
+            ai.Validate();
             var captured = CaptureSettingsFromUi();
             var wroteAnything = _store.Save(captured);
+            var aiChanged = ai.Save();
+            aiChanged |= Rakukan.AI.AiSecret.Save(AiApiKey.Password);
 
             // ディスク上で実際に内容が変わった時だけ engine reload を発火する。
             // reload 経路は RAKUKAN_ENGINE mutex を数秒握るため、
             // 変更なしの「閉じるだけ」で変換が止まるのを避ける。
-            if (wroteAnything)
+            if (wroteAnything || aiChanged)
             {
-                SignalReload();
+                if (wroteAnything) SignalReload();
                 StatusBar.Severity = InfoBarSeverity.Success;
                 StatusBar.Title = "反映しました";
                 StatusBar.Message = "設定を保存し、現在の IME に反映しました。";

@@ -286,6 +286,15 @@ if (Test-Path -LiteralPath $srcBuilder) {
     Write-Host "  -> $builderDest"
 }
 
+# Isolated AI bridge; this never loads a model into the TSF application.
+$srcAiDir = Join-Path $PSScriptRoot "..\apps\rakukan-ai\bin\$cfgName\net8.0-windows"
+if (Test-Path -LiteralPath (Join-Path $srcAiDir 'rakukan-ai.exe')) {
+    $aiDir = Join-Path $installDir 'ai'
+    New-Item -ItemType Directory -Force -Path $aiDir | Out-Null
+    Copy-Item -Path (Join-Path $srcAiDir '*') -Destination $aiDir -Recurse -Force
+    Write-Host "  -> $aiDir"
+} else { Write-Warning 'AI bridge is missing. Run build-settings-winui.ps1 before enabling AI mode.' }
+
 # WinUI settings UI (folder)
 if (Test-Path -LiteralPath $srcSettingsDir) {
     Remove-Item -LiteralPath $settingsDir -Recurse -Force -ErrorAction SilentlyContinue

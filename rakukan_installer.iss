@@ -104,6 +104,7 @@ Source: "dist\rakukan_engine_cuda.dll";   DestDir: "{app}"; Flags: ignoreversion
 Source: "dist\rakukan-engine-host.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 ; ----- Settings GUI (WinUI 3) -----
+Source: "dist\ai\*"; DestDir: "{app}\ai"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
 Source: "dist\settings-ui\*"; DestDir: "{app}\settings-ui"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
 
 ; ----- 辞書 -----

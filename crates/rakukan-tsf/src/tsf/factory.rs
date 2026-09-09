@@ -86,6 +86,7 @@ use crate::{
 
 // M3 T1-A: factory.rs 分割。composition=on_compose, 入力=on_input, 変換=on_convert,
 // 編集操作=edit_ops, dispatcher (handle_action)=dispatch。
+pub(in crate::tsf) mod ai;
 mod dispatch;
 mod edit_ops;
 mod on_compose;
@@ -570,6 +571,7 @@ impl ITfTextInputProcessor_Impl for TextServiceFactory_Impl {
     }
 
     fn Deactivate(&self) -> windows::core::Result<()> {
+        ai::cancel();
         reconversion::clear();
         tray_ipc::clear();
         diag::event(DiagEvent::Deactivate);
@@ -671,7 +673,10 @@ impl ITfCompositionSink_Impl for TextServiceFactory_Impl {
 // ─── ITfKeyEventSink ─────────────────────────────────────────────────────────
 
 impl ITfKeyEventSink_Impl for TextServiceFactory_Impl {
-    fn OnSetFocus(&self, _: BOOL) -> windows::core::Result<()> {
+    fn OnSetFocus(&self, foreground: BOOL) -> windows::core::Result<()> {
+        if !foreground.as_bool() {
+            ai::cancel();
+        }
         Ok(())
     }
 
@@ -682,6 +687,9 @@ impl ITfKeyEventSink_Impl for TextServiceFactory_Impl {
         _: LPARAM,
     ) -> windows::core::Result<BOOL> {
         let vk = normalize_key_event_vk(wparam.0 as u16);
+        if ai::active() || ai::shortcut(vk) {
+            return Ok(TRUE);
+        }
         if reconversion::shortcut(vk) && crate::engine::state::ime_mode_get_atomic().is_on() {
             let tid = self.inner.try_borrow().map(|g| g.client_id).unwrap_or(0);
             if pic
@@ -750,27 +758,59 @@ impl ITfKeyEventSink_Impl for TextServiceFactory_Impl {
         }
         let _t = diag::span("OnKeyDown");
         let vk = normalize_key_event_vk(wparam.0 as u16);
-        if crate::engine::state::ime_mode_get_atomic().is_on() {
+        if ai::active() {
+            let action = self
+                .inner
+                .try_borrow()
+                .ok()
+                .and_then(|g| g.keymap.resolve_action(vk));
+            let action = match action {
+                Some(UserAction::CandidateSelect(n)) => {
+                    Some(UserAction::Input(char::from(b'0' + n)))
+                }
+                other => other,
+            };
+            ai::key(vk, action)?;
+            return Ok(TRUE);
+        }
+        if ai::shortcut(vk) {
             if let Some(ctx) = pic {
-                let tid = self.inner.try_borrow().map(|g| g.client_id).unwrap_or(0);
-                if reconversion::shortcut(vk) {
-                    if let Some((range, text)) = reconversion::selected(ctx, tid) {
-                        let sink: ITfCompositionSink = unsafe { self.cast() }?;
-                        let thread_mgr = self
-                            .inner
-                            .try_borrow()
-                            .ok()
-                            .and_then(|g| g.thread_mgr.clone())
-                            .ok_or_else(|| windows::core::Error::from(E_FAIL))?;
-                        reconversion::begin(thread_mgr, ctx.clone(), tid, sink, range, text)?;
-                        return Ok(TRUE);
-                    }
-                }
-                if (vk == 0x1b || (vk == 0x08 && unsafe { GetKeyState(0x11) as u16 & 0x8000 != 0 }))
-                    && reconversion::cancel(ctx.clone(), tid).unwrap_or(false)
+                let inner = self
+                    .inner
+                    .try_borrow()
+                    .map_err(|_| windows::core::Error::from(E_FAIL))?;
+                let mgr = inner.thread_mgr.clone();
+                let tid = inner.client_id;
+                drop(inner);
+                if let Some(mgr) = mgr
+                    && let Err(e) = ai::begin(ctx.clone(), mgr, tid)
                 {
-                    return Ok(TRUE);
+                    tracing::warn!("AI target capture failed: {e}");
                 }
+            }
+            return Ok(TRUE);
+        }
+        if crate::engine::state::ime_mode_get_atomic().is_on()
+            && let Some(ctx) = pic
+        {
+            let tid = self.inner.try_borrow().map(|g| g.client_id).unwrap_or(0);
+            if reconversion::shortcut(vk)
+                && let Some((range, text)) = reconversion::selected(ctx, tid)
+            {
+                let sink: ITfCompositionSink = unsafe { self.cast() }?;
+                let thread_mgr = self
+                    .inner
+                    .try_borrow()
+                    .ok()
+                    .and_then(|g| g.thread_mgr.clone())
+                    .ok_or_else(|| windows::core::Error::from(E_FAIL))?;
+                reconversion::begin(thread_mgr, ctx.clone(), tid, sink, range, text)?;
+                return Ok(TRUE);
+            }
+            if (vk == 0x1b || (vk == 0x08 && unsafe { GetKeyState(0x11) as u16 & 0x8000 != 0 }))
+                && reconversion::cancel(ctx.clone(), tid).unwrap_or(false)
+            {
+                return Ok(TRUE);
             }
         }
 

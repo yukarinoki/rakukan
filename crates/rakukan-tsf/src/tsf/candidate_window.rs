@@ -338,6 +338,13 @@ unsafe extern "system" fn wnd_proc(
         WM_ERASEBKGND => LRESULT(1),
         // LLM完了ポーリングタイマー
         WM_TIMER => {
+            if wparam.0 == 0xA170 {
+                crate::tsf::factory::ai::poll();
+                return LRESULT(0);
+            }
+            if crate::tsf::factory::ai::active() {
+                return LRESULT(0);
+            }
             if wparam.0 == WAITING_TIMER_ID {
                 crate::tsf::candidate_window::on_waiting_timer();
             }
@@ -589,7 +596,11 @@ unsafe fn draw(hdc: HDC) {
                 colors.foreground
             },
         );
-        let text = format!("{} {}", i + 1, cand);
+        let text = if data.selected == usize::MAX {
+            cand.clone()
+        } else {
+            format!("{} {}", i + 1, cand)
+        };
         let text_w: Vec<u16> = text.encode_utf16().collect();
         let _ = TextOutW(
             hdc,
@@ -2383,5 +2394,19 @@ mod tests {
             ),
             "砉"
         );
+    }
+}
+
+/// Separate timer; AI never holds the normal conversion lock while generating.
+pub(crate) fn ai_timer(start: bool) {
+    let hwnd = ensure_hwnd();
+    if is_valid(hwnd) {
+        unsafe {
+            if start {
+                SetTimer(hwnd, 0xA170, 80, None);
+            } else {
+                let _ = KillTimer(hwnd, 0xA170);
+            }
+        }
     }
 }

@@ -44,3 +44,7 @@ if (-not (Test-Path $outputDir)) {
 }
 
 Write-Host "WinUI settings output: $outputDir"
+
+# The isolated AI bridge uses the same installed .NET runtime as settings.
+& dotnet build (Join-Path $repoRoot 'apps\rakukan-ai\rakukan-ai.csproj') -c $Configuration
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
