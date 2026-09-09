@@ -62,12 +62,8 @@ pub static RAKUKAN_ENGINE: LazyLock<Mutex<EngineWrapper>> =
 /// Activate ごとに重複スポーンしないために使う。
 static ENGINE_INIT_STARTED: AtomicBool = AtomicBool::new(false);
 
-/// 辞書ロード完了のラッチ。
-///
-/// `poll_dict_ready()` は一度 true を返したら以降ずっと true のため、
-/// 毎キーストロークごとに RPC を往復させる必要はない。
-/// ラッチが立っている間は RPC をスキップする。
-/// `engine_reload()` でリセットされる。
+/// 辞書が利用可能かの最新観測値。アイコンと状態遷移ログに使う。
+/// 他アプリによるホスト再生成・自動再接続を見逃さないよう、確認の省略には使わない。
 static DICT_READY_LATCH: AtomicBool = AtomicBool::new(false);
 
 /// モデルロード完了のラッチ（`DICT_READY_LATCH` と同じ方針）。
@@ -118,23 +114,11 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
-/// 辞書 ready 状態を取得。未 ready のうちだけ RPC で poll する。
-///
-/// ホットパス（`on_input` 等）から 1 キーストロークごとに呼ばれる前提。
-///
-/// `poll_dict_ready()` は「PENDING にある辞書を今回注入した」ときだけ `true` を返す設計。
-/// ホストが既起動で辞書がすでに注入済みの場合は常に `false` を返すため、
-/// フォールバックとして `is_dict_ready()` も確認する。
+/// 現在接続しているエンジンの辞書を確認し、アイコン用の観測値を更新する。
+/// 旧 DLL は poll が注入時だけ true を返すので is_dict_ready も併用する。
 #[inline]
 pub fn poll_dict_ready_cached(eng: &DynEngine) -> bool {
-    if DICT_READY_LATCH.load(AO::Acquire) {
-        return true;
-    }
-    // poll_dict_ready: 「今この呼び出しで PENDING → engine に注入した」なら true。
-    // is_dict_ready: ホスト側で辞書がすでに利用可能なら true（注入済みかどうか問わず）。
-    // ホスト既起動時は poll が false を返し続けるため、is_dict_ready を併用する。
-    let just_injected = eng.poll_dict_ready();
-    let r = just_injected || eng.is_dict_ready();
+    let r = eng.poll_dict_ready() || eng.is_dict_ready();
     if r {
         // M1.6 T-HOST2: false → true の遷移で計測
         if !DICT_READY_LATCH.swap(true, AO::AcqRel) {
@@ -147,6 +131,11 @@ pub fn poll_dict_ready_cached(eng: &DynEngine) -> bool {
             langbar_update_set();
         }
     } else {
+        if DICT_READY_LATCH.swap(false, AO::AcqRel) {
+            DICT_WAIT_START_MS.store(0, AO::Release);
+            DICT_WAIT_WARNED.store(false, AO::Release);
+            langbar_update_set();
+        }
         note_dict_not_ready(eng);
     }
     r
@@ -155,11 +144,9 @@ pub fn poll_dict_ready_cached(eng: &DynEngine) -> bool {
 /// モデル ready 状態を取得（`poll_dict_ready_cached` と同じ方針）。
 #[inline]
 pub fn poll_model_ready_cached(eng: &DynEngine) -> bool {
-    if MODEL_READY_LATCH.load(AO::Acquire) {
-        return true;
-    }
     let r = eng.poll_model_ready();
-    if r && !MODEL_READY_LATCH.swap(true, AO::AcqRel) {
+    let was_ready = MODEL_READY_LATCH.swap(r, AO::AcqRel);
+    if r && !was_ready {
         let reset_at = READY_RESET_AT_MS.load(AO::Acquire);
         if reset_at != 0 {
             let elapsed = now_ms().saturating_sub(reset_at);

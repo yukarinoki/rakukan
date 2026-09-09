@@ -307,6 +307,11 @@ fn load_engine_into(
 }
 
 fn dispatch_engine(eng: &mut DynEngine, req: Request) -> Response {
+    // クライアントの ready キャッシュや明示的な Poll に依存させない。
+    // 再接続後の最初の通常リクエストでも、ロード済み辞書・モデルを渡す。
+    // DLL 内の非ブロッキング確認であり、追加の RPC 往復は発生しない。
+    eng.poll_dict_ready();
+    eng.poll_model_ready();
     use Request::*;
     match req {
         Hello { .. }
@@ -473,4 +478,96 @@ fn dispatch_engine(eng: &mut DynEngine, req: Request) -> Response {
 #[allow(dead_code)]
 pub fn sleep_short() {
     std::thread::sleep(Duration::from_millis(50));
+}
+
+#[cfg(test)]
+mod readiness_tests {
+    use super::*;
+
+    /// 実 DLL とインストール済み辞書を使用。学習は行わない。
+    #[test]
+    #[ignore = "set RAKUKAN_TEST_ENGINE_DLL and install a dictionary; run explicitly"]
+    fn dictionary_is_attached_without_client_poll_after_engine_recreation() {
+        let dll = std::env::var_os("RAKUKAN_TEST_ENGINE_DLL").expect("test DLL path");
+        let path = std::path::Path::new(&dll);
+        // DLL を保持したまま engine handle だけを作り直す。
+        let mut previous: Option<DynEngine> = None;
+        for generation in 0..3 {
+            let mut eng = DynEngine::from_dll(path, None).unwrap();
+            drop(previous.take());
+            assert!(!eng.is_dict_ready());
+            eng.start_load_dict();
+            let deadline = std::time::Instant::now() + Duration::from_secs(10);
+            while !eng.dict_status().starts_with("loaded;") {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "{}",
+                    eng.dict_status()
+                );
+                assert!(
+                    !eng.dict_status().starts_with("failed"),
+                    "{}",
+                    eng.dict_status()
+                );
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            assert!(!eng.is_dict_ready(), "ロード完了時点では受け渡し前");
+            // TSF が古い ready をキャッシュして Poll を省略しても候補を取得できる。
+            let response = dispatch_engine(
+                &mut eng,
+                Request::MergeCandidatesForReading {
+                    reading: "けいてい".into(),
+                    llm_cands: vec![],
+                    limit: 40,
+                },
+            );
+            let Response::Strings(candidates) = response else {
+                panic!("unexpected response");
+            };
+            assert!(candidates.iter().any(|c| c == "径庭"), "{candidates:?}");
+            assert!(eng.is_dict_ready());
+            assert!(eng.dict_status().starts_with("ready:"));
+            println!(
+                "generation={generation}: no client poll, 径庭 found, status={}",
+                eng.dict_status()
+            );
+            previous = Some(eng);
+        }
+        // モデルの実行テストは明示的に指定された場合だけ行う。
+        if std::env::var_os("RAKUKAN_TEST_READY_MODEL").is_some() {
+            let mut eng = previous.take().unwrap();
+            eng.start_load_model();
+            let deadline = std::time::Instant::now() + Duration::from_secs(30);
+            while !eng.poll_model_ready() {
+                assert!(std::time::Instant::now() < deadline, "{}", eng.last_error());
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            eng.force_preedit("けいてい".into());
+            assert!(eng.bg_start(3));
+            assert!(eng.is_kanji_ready(), "モデルを BG に貸し出しても ready");
+            assert!(eng.poll_model_ready());
+            while eng.bg_status() != "done" {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "BG conversion timeout"
+                );
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            let response = dispatch_engine(
+                &mut eng,
+                Request::BgTakeCandidates {
+                    key: "けいてい".into(),
+                },
+            );
+            let Response::Strings(candidates) = response else {
+                panic!("unexpected response");
+            };
+            assert!(!candidates.is_empty(), "ready 確認で BG の結果を失わない");
+            assert!(eng.is_kanji_ready());
+            println!("model: ready during BG, candidates preserved after completion");
+            // conv_cache の常駐 worker はプロセス寿命。実ホスト同様、DLL を
+            // プロセス終了まで保持し、テスト終了時に実行コードを外さない。
+            std::mem::forget(eng);
+        }
+    }
 }

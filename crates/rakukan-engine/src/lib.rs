@@ -414,7 +414,7 @@ impl RakunEngine {
             converter.set_n_threads(config.n_threads);
         }
         info!(
-            "engine::init: model ready name={}",
+            "engine::init: model constructed name={}",
             converter.model_display_name()
         );
         Ok(converter)

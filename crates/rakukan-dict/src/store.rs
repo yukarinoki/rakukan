@@ -280,7 +280,7 @@ impl DictStore {
         };
 
         info!(
-            "dict::store: ready user_entries={} mozc={} mozc_path={:?}",
+            "dict::store: loaded user_entries={} mozc={} mozc_path={:?}",
             user.len(),
             if mozc.is_some() { "loaded" } else { "none" },
             mozc_path.map(|p| p.display().to_string()),

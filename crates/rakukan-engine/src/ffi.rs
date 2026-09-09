@@ -425,15 +425,6 @@ pub extern "C" fn engine_merge_candidates(
     let engine = unsafe { &*(handle as *const RakunEngine) };
     let s = unsafe { from_cstr(llm_json) };
     let llm_cands: Vec<String> = serde_json::from_str(s).unwrap_or_default();
-    // 辞書検索を直接デバッグ
-    let hiragana = engine.hiragana_text().to_string();
-    let dict_debug = if let Some(store) = engine.dict_store_ref() {
-        let d = store.lookup_dict(&hiragana, limit as usize);
-        format!("lookup_dict({:?})={:?}", hiragana, d)
-    } else {
-        "dict_store=None".to_string()
-    };
-    set_dict_status(dict_debug);
     let merged = engine.merge_candidates(llm_cands, limit as usize);
     let json = serde_json::to_string(&merged).unwrap_or_else(|_| "[]".into());
     unsafe { to_cstr(json) }
@@ -453,13 +444,6 @@ pub extern "C" fn engine_merge_candidates_for_reading(
     let reading = unsafe { from_cstr(reading) };
     let s = unsafe { from_cstr(llm_json) };
     let llm_cands: Vec<String> = serde_json::from_str(s).unwrap_or_default();
-    let dict_debug = if let Some(store) = engine.dict_store_ref() {
-        let d = store.lookup_dict(reading, limit as usize);
-        format!("lookup_dict({:?})={:?}", reading, d)
-    } else {
-        "dict_store=None".to_string()
-    };
-    set_dict_status(dict_debug);
     let merged = engine.merge_candidates_for_reading(reading, llm_cands, limit as usize);
     let json = serde_json::to_string(&merged).unwrap_or_else(|_| "[]".into());
     unsafe { to_cstr(json) }
@@ -516,10 +500,10 @@ pub extern "C" fn engine_start_load_model(handle: *mut c_void) {
         set_last_error("model loading...".to_string());
         match RakunEngine::build_converter(&config) {
             Ok(converter) => {
-                set_last_error("model load complete".to_string());
-                let _ = PENDING_CONVERTER
-                    .lock()
-                    .map(|mut g| *g = Some((fingerprint, converter)));
+                if let Ok(mut g) = PENDING_CONVERTER.lock() {
+                    *g = Some((fingerprint, converter));
+                    set_last_error("model loaded; awaiting engine attachment".to_string());
+                }
             }
             Err(e) => {
                 let msg = format!("model load failed: {e}");
@@ -543,7 +527,7 @@ fn config_fingerprint(config: &EngineConfig) -> String {
 }
 
 /// モデルが pending_converter に届いているか確認し、届いていたら engine に注入する。
-/// 戻り値: true = 注入した（is_kanji_ready() が true になった）
+/// 戻り値: true = ロード済み。BG 変換がモデルを使用している場合も true。
 #[unsafe(no_mangle)]
 pub extern "C" fn engine_poll_model_ready(handle: *mut c_void) -> bool {
     let engine = unsafe { &mut *(handle as *mut RakunEngine) };
@@ -556,13 +540,19 @@ pub extern "C" fn engine_poll_model_ready(handle: *mut c_void) -> bool {
         }
         return true;
     }
+    // モデルが BG 変換に貸し出されていても、ロード済みで利用中。
+    // Done をここで回収すると候補を捨てるため、所有の確認だけ行う。
+    if crate::conv_cache::has_converter() {
+        return true;
+    }
     if let Ok(mut g) = PENDING_CONVERTER.try_lock() {
         // config が一致する converter のみ注入する（Reload 直後の取り違え防止）
         let fingerprint = config_fingerprint(engine.get_config());
         match g.take() {
             Some((fp, conv)) if fp == fingerprint => {
                 engine.set_kanji_converter(conv);
-                tracing::info!("converter injected into engine");
+                set_last_error("model ready".to_string());
+                tracing::info!("converter injected into engine: model ready");
                 return true;
             }
             Some(_) => {
@@ -577,60 +567,71 @@ pub extern "C" fn engine_poll_model_ready(handle: *mut c_void) -> bool {
 /// 辞書のロードをバックグラウンドで開始する。
 #[unsafe(no_mangle)]
 pub extern "C" fn engine_start_load_dict(handle: *mut c_void) {
-    static DICT_LOADING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-
-    let engine = unsafe { &*(handle as *const RakunEngine) };
+    let engine = unsafe { &mut *(handle as *mut RakunEngine) };
     if engine.is_dict_ready() {
         return;
     }
-
-    // 多重 spawn 防止
-    if DICT_LOADING.swap(true, std::sync::atomic::Ordering::AcqRel) {
+    // loading と pending は同じロックで管理し、worker 完了との間に隙間を作らない。
+    let mut state = DICT_LOAD.lock().unwrap_or_else(|p| p.into_inner());
+    if let Some(store) = state.pending.take() {
+        engine.set_dict_store(store);
+        set_dict_status("ready: attached to engine".to_string());
         return;
     }
-
-    // 前回セッションの残留データをクリア
-    let _ = PENDING_DICT.lock().map(|mut g| *g = None);
-
-    // DictStore をロードしてエンジンに渡す（同様に poll パターン）
+    if state.loading {
+        return;
+    }
+    state.loading = true;
+    // worker の起動前に状態を更新し、前セッションの ready を残さない。
+    set_dict_status(format!(
+        "loading: build={}",
+        option_env!("RAKUKAN_ENGINE_BUILD_TIME").unwrap_or("unknown")
+    ));
+    drop(state);
     std::thread::spawn(move || {
         use crate::dict::loader::{LoadResult, load_dict};
-
-        set_dict_status(format!(
-            "starting: build={}",
-            option_env!("RAKUKAN_ENGINE_BUILD_TIME").unwrap_or("unknown")
-        ));
-
-        match load_dict() {
+        let result = load_dict();
+        let mut state = DICT_LOAD.lock().unwrap_or_else(|p| p.into_inner());
+        match result {
             LoadResult::Ok(store) => {
                 let user_n = store.user_entry_count();
-                let _ = PENDING_DICT.lock().map(|mut g| *g = Some(store));
-                set_dict_status(format!("ok: mozc=true user_entries={}", user_n));
+                state.pending = Some(store);
+                // pending の公開と状態更新を同じロック内で行い、注入後に
+                // worker が状態を「待ち」に巻き戻す競合を防ぐ。
+                set_dict_status(format!(
+                    "loaded; awaiting engine attachment: mozc=true user_entries={user_n}"
+                ));
             }
             LoadResult::Failed { step, reason } => {
                 set_dict_status(format!("failed at [{}]: {}", step, reason));
                 tracing::warn!("dict load failed at [{}]: {}", step, reason);
             }
         }
-        DICT_LOADING.store(false, std::sync::atomic::Ordering::Release);
+        state.loading = false;
     });
 }
 
-static PENDING_DICT: LazyLock<Mutex<Option<crate::DictStore>>> = LazyLock::new(|| Mutex::new(None));
+#[derive(Default)]
+struct DictLoadState {
+    loading: bool,
+    pending: Option<crate::DictStore>,
+}
+static DICT_LOAD: LazyLock<Mutex<DictLoadState>> =
+    LazyLock::new(|| Mutex::new(DictLoadState::default()));
 
 /// 辞書が pending に届いていたら engine に注入する。
-/// 戻り値: true = 注入した
+/// 戻り値: true = 辞書がエンジンに設定済みで利用可能（繰り返し呼び出し可）。
 #[unsafe(no_mangle)]
 pub extern "C" fn engine_poll_dict_ready(handle: *mut c_void) -> bool {
     let engine = unsafe { &mut *(handle as *mut RakunEngine) };
     if engine.is_dict_ready() {
-        return false;
+        return true;
     }
-    if let Ok(mut g) = PENDING_DICT.try_lock()
-        && let Some(store) = g.take()
+    if let Ok(mut state) = DICT_LOAD.try_lock()
+        && let Some(store) = state.pending.take()
     {
         engine.set_dict_store(store);
-        set_dict_status("injected: mozc=true".to_string());
+        set_dict_status("ready: attached to engine".to_string());
         return true;
     }
     false
@@ -642,7 +643,7 @@ pub extern "C" fn engine_poll_dict_ready(handle: *mut c_void) -> bool {
 #[unsafe(no_mangle)]
 pub extern "C" fn engine_is_kanji_ready(handle: *mut c_void) -> bool {
     let engine = unsafe { &*(handle as *const RakunEngine) };
-    engine.is_kanji_ready()
+    engine.is_kanji_ready() || crate::conv_cache::has_converter()
 }
 
 /// 辞書が準備できているか
@@ -764,5 +765,59 @@ mod build_info_tests {
         assert_eq!(back.pkg_version, info.pkg_version);
         assert_eq!(back.abi_version, info.abi_version);
         assert_eq!(back.git_sha, info.git_sha);
+    }
+
+    #[test]
+    fn completed_dictionary_survives_repeated_start_and_status_queries() {
+        let dir = tempfile::tempdir().unwrap();
+        let user_path = dir.path().join("user_dict.toml");
+        std::fs::write(
+            &user_path,
+            "[[entries]]\nreading = \"けいてい\"\nsurfaces = [\"径庭\"]\n",
+        )
+        .unwrap();
+        let store = crate::DictStore::load(Some(&user_path), None, None).unwrap();
+        let mut engine = RakunEngine::new(EngineConfig::default());
+        let handle = &mut engine as *mut RakunEngine as *mut c_void;
+        let reading = CString::new("けいてい").unwrap();
+        let llm = CString::new("[]").unwrap();
+        set_dict_status("failed at [probe_mozc]: test failure".to_string());
+        let result =
+            engine_merge_candidates_for_reading(handle, reading.as_ptr(), llm.as_ptr(), 40);
+        engine_free_string(result);
+        assert!(!engine_poll_dict_ready(handle));
+        assert_eq!(
+            *DICT_STATUS.lock().unwrap(),
+            "failed at [probe_mozc]: test failure",
+            "失敗理由も検索結果で消さない"
+        );
+        DICT_LOAD.lock().unwrap().loading = true;
+        engine_start_load_dict(handle);
+        assert!(
+            !engine_is_dict_ready(handle),
+            "ロード中を ready と誤判定しない"
+        );
+        DICT_LOAD.lock().unwrap().loading = false;
+        // worker がロードを完了したが、TSF はまだ poll していない状態。
+        DICT_LOAD.lock().unwrap().pending = Some(store);
+        set_dict_status("loaded; awaiting engine attachment".to_string());
+        assert!(!engine_is_dict_ready(handle));
+        engine_start_load_dict(handle);
+        assert!(
+            engine_is_dict_ready(handle),
+            "再 start は完成済み辞書を消さず注入する"
+        );
+        assert!(engine_poll_dict_ready(handle), "ready は繰り返し確認できる");
+        assert!(DICT_LOAD.lock().unwrap().pending.is_none());
+        let result =
+            engine_merge_candidates_for_reading(handle, reading.as_ptr(), llm.as_ptr(), 40);
+        let candidates: Vec<String> = serde_json::from_str(unsafe { from_cstr(result) }).unwrap();
+        engine_free_string(result);
+        assert_eq!(candidates.first().map(String::as_str), Some("径庭"));
+        assert_eq!(
+            *DICT_STATUS.lock().unwrap(),
+            "ready: attached to engine",
+            "候補検索がロード状態を検索結果で上書きしない"
+        );
     }
 }

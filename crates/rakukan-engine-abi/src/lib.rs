@@ -582,7 +582,7 @@ impl DynEngine {
         }
     }
 
-    /// true = モデルが新たに利用可能になった（langbar 更新トリガー）
+    /// true = モデルがロード済み（BG 変換で使用中の場合も含む）。
     pub fn poll_model_ready(&mut self) -> bool {
         unsafe { (self.vtable.poll_model_ready)(self.handle) }
     }
@@ -593,7 +593,8 @@ impl DynEngine {
         }
     }
 
-    /// true = 辞書が新たに利用可能になった
+    /// true = 辞書がエンジンに設定済みで利用可能。
+    /// 旧 DLL は注入時だけ true を返すため、互換対応には is_dict_ready も併用する。
     pub fn poll_dict_ready(&mut self) -> bool {
         unsafe { (self.vtable.poll_dict_ready)(self.handle) }
     }
