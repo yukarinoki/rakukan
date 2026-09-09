@@ -7,6 +7,18 @@
     mc:Ignorable="d"
     Title="Rakukan 設定">
     <Grid x:Name="RootGrid">
+        <Grid.Resources>
+            <Style x:Key="SettingsPageLayout" TargetType="StackPanel">
+                <Setter Property="Margin" Value="20,16,20,20" />
+                <Setter Property="Spacing" Value="16" />
+            </Style>
+            <Style x:Key="SettingsPageTitle" TargetType="TextBlock" BasedOn="{StaticResource TitleTextBlockStyle}">
+                <Setter Property="FontSize" Value="24" />
+            </Style>
+            <Style x:Key="SettingsSectionTitle" TargetType="TextBlock" BasedOn="{StaticResource SubtitleTextBlockStyle}">
+                <Setter Property="FontSize" Value="18" />
+            </Style>
+        </Grid.Resources>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
@@ -27,6 +39,9 @@
             IsBackButtonVisible="Collapsed"
             IsSettingsVisible="False"
             PaneDisplayMode="Left"
+            OpenPaneLength="180"
+            IsPaneOpen="True"
+            IsPaneToggleButtonVisible="False"
             SelectionChanged="OnNavigationSelectionChanged">
             <NavigationView.PaneFooter>
                 <TextBlock
@@ -75,451 +90,475 @@
 
             <Grid>
                 <ScrollViewer x:Name="GeneralPage">
-                    <StackPanel Margin="32,24,32,32" Spacing="20">
+                    <StackPanel Style="{StaticResource SettingsPageLayout}">
                         <StackPanel Spacing="4">
-                            <TextBlock Style="{ThemeResource TitleTextBlockStyle}" Text="基本設定" />
-                            <TextBlock Style="{ThemeResource BodyTextBlockStyle}" Opacity="0.7" Text="エンジンや候補表示に関する基本的な動作を設定します。" />
+                            <TextBlock Style="{StaticResource SettingsPageTitle}" Text="基本設定" />
+                            <TextBlock TextWrapping="Wrap" Style="{ThemeResource BodyTextBlockStyle}" Opacity="0.7" Text="エンジンや候補表示に関する基本的な動作を設定します。" />
                         </StackPanel>
 
-                        <Border
-                            Padding="20"
-                            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                            BorderThickness="1"
-                            CornerRadius="16">
-                            <StackPanel Spacing="16">
-                                <TextBlock Style="{ThemeResource SubtitleTextBlockStyle}" Text="動作とモデル" />
-                                <Grid ColumnSpacing="20" RowSpacing="16">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
-                                    </Grid.RowDefinitions>
+                        <StackPanel Spacing="10">
+                            <TextBlock Style="{StaticResource SettingsSectionTitle}" Text="動作とモデル" />
+                            <Grid ColumnSpacing="20" RowSpacing="10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
 
-                                    <StackPanel Grid.Row="0" Grid.Column="0" Spacing="8">
-                                        <TextBlock Text="ログレベル" />
-                                        <ComboBox x:Name="LogLevelCombo">
-                                            <x:String>error</x:String>
-                                            <x:String>warn</x:String>
-                                            <x:String>info</x:String>
-                                            <x:String>debug</x:String>
-                                            <x:String>trace</x:String>
-                                        </ComboBox>
-                                    </StackPanel>
+                                <StackPanel Grid.Row="0" Grid.Column="0" Spacing="6">
+                                    <TextBlock Text="ログレベル" />
+                                    <ComboBox x:Name="LogLevelCombo">
+                                        <x:String>error</x:String>
+                                        <x:String>warn</x:String>
+                                        <x:String>info</x:String>
+                                        <x:String>debug</x:String>
+                                        <x:String>trace</x:String>
+                                    </ComboBox>
+                                </StackPanel>
 
-                                    <StackPanel Grid.Row="0" Grid.Column="1" Spacing="8">
-                                        <TextBlock Text="GPU バックエンド" />
-                                        <ComboBox x:Name="GpuBackendCombo">
-                                            <x:String>auto</x:String>
-                                            <x:String>cpu</x:String>
-                                            <x:String>vulkan</x:String>
-                                            <x:String>cuda</x:String>
-                                        </ComboBox>
-                                    </StackPanel>
+                                <StackPanel Grid.Row="0" Grid.Column="1" Spacing="6">
+                                    <TextBlock Text="GPU バックエンド" />
+                                    <ComboBox x:Name="GpuBackendCombo">
+                                        <x:String>auto</x:String>
+                                        <x:String>cpu</x:String>
+                                        <x:String>vulkan</x:String>
+                                        <x:String>cuda</x:String>
+                                    </ComboBox>
+                                </StackPanel>
 
-                                    <StackPanel Grid.Row="1" Grid.Column="0" Spacing="8">
-                                        <TextBlock Text="GPU レイヤー数" />
-                                        <NumberBox x:Name="NGpuLayersBox" SmallChange="1" SpinButtonPlacementMode="Compact" />
-                                    </StackPanel>
+                                <StackPanel Grid.Row="1" Grid.Column="0" Spacing="6">
+                                    <TextBlock Text="GPU レイヤー数" />
+                                    <NumberBox x:Name="NGpuLayersBox" SmallChange="1" SpinButtonPlacementMode="Compact" />
+                                </StackPanel>
 
-                                    <StackPanel Grid.Row="1" Grid.Column="1" Spacing="8">
-                                        <TextBlock Text="使用 GPU インデックス" />
-                                        <NumberBox x:Name="MainGpuBox" SmallChange="1" SpinButtonPlacementMode="Compact" />
-                                    </StackPanel>
+                                <StackPanel Grid.Row="1" Grid.Column="1" Spacing="6">
+                                    <TextBlock Text="使用 GPU インデックス" />
+                                    <NumberBox x:Name="MainGpuBox" SmallChange="1" SpinButtonPlacementMode="Compact" />
+                                </StackPanel>
 
-                                    <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Spacing="8">
-                                        <TextBlock Text="モデル ID" />
-                                        <ComboBox x:Name="ModelVariantCombo" IsEditable="True" PlaceholderText="jinen-v1-xsmall-q5" SelectionChanged="ModelVariantCombo_SelectionChanged">
-                                            <ComboBoxItem Content="jinen-v1-xsmall-q5   (約 30 MB)" Tag="jinen-v1-xsmall-q5" />
-                                            <ComboBoxItem Content="jinen-v1-small-q5    (約 84 MB)" Tag="jinen-v1-small-q5" />
-                                            <ComboBoxItem Content="jinen-v1-xsmall-f16  (約 138 MB)" Tag="jinen-v1-xsmall-f16" />
-                                            <ComboBoxItem Content="jinen-v1-small-f16   (約 423 MB)" Tag="jinen-v1-small-f16" />
-                                            <ComboBoxItem Content="jinen-v2-xsmall-q5   (約 28 MB)" Tag="jinen-v2-xsmall-q5" />
-                                            <ComboBoxItem Content="jinen-v2-small-q5    (約 81 MB)" Tag="jinen-v2-small-q5" />
-                                            <ComboBoxItem Content="jinen-v2-xsmall-f16  (約 72 MB)" Tag="jinen-v2-xsmall-f16" />
-                                            <ComboBoxItem Content="jinen-v2-small-f16   (約 220 MB)" Tag="jinen-v2-small-f16" />
-                                        </ComboBox>
-                                    </StackPanel>
-                                </Grid>
-                            </StackPanel>
-                        </Border>
+                                <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Spacing="6">
+                                    <TextBlock Text="モデル ID" />
+                                    <ComboBox x:Name="ModelVariantCombo" IsEditable="True" PlaceholderText="jinen-v1-xsmall-q5" SelectionChanged="ModelVariantCombo_SelectionChanged">
+                                        <ComboBoxItem Content="jinen-v1-xsmall-q5   (約 30 MB)" Tag="jinen-v1-xsmall-q5" />
+                                        <ComboBoxItem Content="jinen-v1-small-q5    (約 84 MB)" Tag="jinen-v1-small-q5" />
+                                        <ComboBoxItem Content="jinen-v1-xsmall-f16  (約 138 MB)" Tag="jinen-v1-xsmall-f16" />
+                                        <ComboBoxItem Content="jinen-v1-small-f16   (約 423 MB)" Tag="jinen-v1-small-f16" />
+                                        <ComboBoxItem Content="jinen-v2-xsmall-q5   (約 28 MB)" Tag="jinen-v2-xsmall-q5" />
+                                        <ComboBoxItem Content="jinen-v2-small-q5    (約 81 MB)" Tag="jinen-v2-small-q5" />
+                                        <ComboBoxItem Content="jinen-v2-xsmall-f16  (約 72 MB)" Tag="jinen-v2-xsmall-f16" />
+                                        <ComboBoxItem Content="jinen-v2-small-f16   (約 220 MB)" Tag="jinen-v2-small-f16" />
+                                    </ComboBox>
+                                </StackPanel>
+                            </Grid>
+                        </StackPanel>
 
-                        <Border
-                            Padding="20"
-                            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                            BorderThickness="1"
-                            CornerRadius="16">
-                            <StackPanel Spacing="8">
-                                <TextBlock Style="{ThemeResource SubtitleTextBlockStyle}" Text="候補表示" />
-                                <TextBlock Opacity="0.7" Text="Space 変換で表示する候補数と、LLM 探索の上限を調整します。候補数を増やす場合は Space変換 beam も同じか大きい値にしてください。" />
-                                <Grid ColumnSpacing="20">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Grid.Column="0" Spacing="8">
-                                        <TextBlock Text="候補数 (1-30)" />
-                                        <NumberBox x:Name="NumCandidatesBox" SmallChange="1" Minimum="1" Maximum="30" SpinButtonPlacementMode="Inline" ValueChanged="NumCandidatesBox_ValueChanged" />
-                                    </StackPanel>
-                                    <StackPanel Grid.Column="1" Spacing="8">
-                                        <TextBlock Text="Space変換 beam (1-30)" />
-                                        <NumberBox x:Name="ConversionBeamSizeBox" SmallChange="1" Minimum="1" Maximum="30" SpinButtonPlacementMode="Inline" ValueChanged="ConversionBeamSizeBox_ValueChanged" />
-                                    </StackPanel>
-                                </Grid>
+                        <StackPanel Spacing="6">
+                            <TextBlock Style="{StaticResource SettingsSectionTitle}" Text="候補表示" />
+                            <TextBlock TextWrapping="Wrap" Opacity="0.7" Text="Space 変換で表示する候補数と、LLM 探索の上限を調整します。候補数を増やす場合は Space変換 beam も同じか大きい値にしてください。" />
+                            <Grid ColumnSpacing="20">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" Spacing="6">
+                                    <TextBlock Text="候補数 (1-30)" />
+                                    <NumberBox x:Name="NumCandidatesBox" SmallChange="1" Minimum="1" Maximum="30" SpinButtonPlacementMode="Inline" ValueChanged="NumCandidatesBox_ValueChanged" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Spacing="6">
+                                    <TextBlock Text="Space変換 beam (1-30)" />
+                                    <NumberBox x:Name="ConversionBeamSizeBox" SmallChange="1" Minimum="1" Maximum="30" SpinButtonPlacementMode="Inline" ValueChanged="ConversionBeamSizeBox_ValueChanged" />
+                                </StackPanel>
+                            </Grid>
 
-                            </StackPanel>
-                        </Border>
+                        </StackPanel>
                     </StackPanel>
                 </ScrollViewer>
 
                 <ScrollViewer x:Name="AppearancePage" Visibility="Collapsed">
-                    <StackPanel Margin="32,24,32,32" Spacing="20">
-                        <TextBlock Style="{ThemeResource TitleTextBlockStyle}" Text="外観" />
-                        <Border Padding="20" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="16">
-                            <StackPanel Spacing="12">
-                                <TextBlock Style="{ThemeResource SubtitleTextBlockStyle}" Text="候補の文字サイズ" />
-                                <Grid ColumnSpacing="20">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Grid.Column="0" Spacing="8">
-                                        <TextBlock Text="フォントサイズ (10-72)" />
-                                        <NumberBox x:Name="CandidateFontHeightBox" SmallChange="1" Minimum="10" Maximum="72" SpinButtonPlacementMode="Inline" />
-                                    </StackPanel>
-                                    <StackPanel Grid.Column="1" Spacing="8" VerticalAlignment="Bottom">
-                                        <TextBlock Opacity="0.7" TextWrapping="Wrap" Text="100% 表示時のサイズです。Windows の拡大率に合わせて文字・行間・余白を拡大します。次回の候補表示から反映。" />
-                                    </StackPanel>
-                                </Grid>
-                            </StackPanel>
-                        </Border>
-                        <Border Padding="20" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="16">
-                            <StackPanel Spacing="12">
-                                <TextBlock Style="{ThemeResource SubtitleTextBlockStyle}" Text="入力位置のキャレット" />
-                                <ToggleSwitch x:Name="CaretWidthEnabledToggle" Header="IME のオン／オフで太さを変える" OnContent="有効" OffContent="無効" />
-                                <Grid ColumnSpacing="20">
-                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                    <StackPanel Grid.Column="0" Spacing="8">
-                                        <TextBlock Text="IME オン時の太さ (1–20)" />
-                                        <NumberBox x:Name="CaretOnWidthBox" Minimum="1" Maximum="20" SmallChange="1" SpinButtonPlacementMode="Inline" />
-                                    </StackPanel>
-                                    <StackPanel Grid.Column="1" Spacing="8">
-                                        <TextBlock Text="IME オフ時の太さ (1–20)" />
-                                        <NumberBox x:Name="CaretOffWidthBox" Minimum="1" Maximum="20" SmallChange="1" SpinButtonPlacementMode="Inline" />
-                                    </StackPanel>
-                                </Grid>
-                                <TextBlock Opacity="0.7" TextWrapping="Wrap" Text="Windows のテキストカーソルの太さを切り替えます。無効にすると元の設定に戻ります。独自描画のアプリでは反映されない場合や、入力欄を選び直す必要がある場合があります。" />
-                            </StackPanel>
-                        </Border>
+                    <StackPanel Style="{StaticResource SettingsPageLayout}">
+                        <TextBlock Style="{StaticResource SettingsPageTitle}" Text="外観" />
+                        <StackPanel Spacing="12">
+                            <TextBlock Style="{StaticResource SettingsSectionTitle}" Text="候補の文字サイズ" />
+                            <Grid ColumnSpacing="20">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" Spacing="6">
+                                    <TextBlock Text="フォントサイズ (10-72)" />
+                                    <NumberBox x:Name="CandidateFontHeightBox" SmallChange="1" Minimum="10" Maximum="72" SpinButtonPlacementMode="Inline" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Spacing="6" VerticalAlignment="Bottom">
+                                    <TextBlock Opacity="0.7" TextWrapping="Wrap" Text="100% 表示時のサイズです。Windows の拡大率に合わせて文字・行間・余白を拡大します。次回の候補表示から反映。" />
+                                </StackPanel>
+                            </Grid>
+                        </StackPanel>
+                        <StackPanel Spacing="12">
+                            <TextBlock Style="{StaticResource SettingsSectionTitle}" Text="入力位置のキャレット" />
+                            <Grid ColumnSpacing="16" MinHeight="32">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="IME のオン／オフで太さを変える" TextWrapping="Wrap" VerticalAlignment="Center" />
+                                <ToggleSwitch x:Name="CaretWidthEnabledToggle" Grid.Column="1" MinWidth="44" OnContent="" OffContent="" AutomationProperties.Name="IME のオン／オフで太さを変える" />
+                            </Grid>
+                            <Grid ColumnSpacing="20">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" Spacing="6">
+                                    <TextBlock Text="IME オン時の太さ (1–20)" />
+                                    <NumberBox x:Name="CaretOnWidthBox" Minimum="1" Maximum="20" SmallChange="1" SpinButtonPlacementMode="Inline" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Spacing="6">
+                                    <TextBlock Text="IME オフ時の太さ (1–20)" />
+                                    <NumberBox x:Name="CaretOffWidthBox" Minimum="1" Maximum="20" SmallChange="1" SpinButtonPlacementMode="Inline" />
+                                </StackPanel>
+                            </Grid>
+                            <TextBlock Opacity="0.7" TextWrapping="Wrap" Text="Windows のテキストカーソルの太さを切り替えます。無効にすると元の設定に戻ります。独自描画のアプリでは反映されない場合や、入力欄を選び直す必要がある場合があります。" />
+                        </StackPanel>
                     </StackPanel>
                 </ScrollViewer>
 
                 <ScrollViewer x:Name="InputPage" Visibility="Collapsed">
-                    <StackPanel Margin="32,24,32,32" Spacing="20">
+                    <StackPanel Style="{StaticResource SettingsPageLayout}">
                         <StackPanel Spacing="4">
-                            <TextBlock Style="{ThemeResource TitleTextBlockStyle}" Text="入力設定" />
-                            <TextBlock Style="{ThemeResource BodyTextBlockStyle}" Opacity="0.7" Text="キーボード配列と入力モードの初期状態を調整します。" />
+                            <TextBlock Style="{StaticResource SettingsPageTitle}" Text="入力設定" />
+                            <TextBlock TextWrapping="Wrap" Style="{ThemeResource BodyTextBlockStyle}" Opacity="0.7" Text="キーボード配列と入力モードの初期状態を調整します。" />
                         </StackPanel>
 
-                        <Border Padding="20" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="16">
-                            <StackPanel Spacing="16">
-                                <TextBlock Style="{ThemeResource SubtitleTextBlockStyle}" Text="キーボード" />
-                                <StackPanel Spacing="8">
-                                    <TextBlock Text="キーボード配列" />
-                                    <ComboBox x:Name="KeyboardLayoutCombo">
-                                        <x:String>jis</x:String>
-                                        <x:String>us</x:String>
-                                        <x:String>custom</x:String>
+                        <StackPanel Spacing="10">
+                            <TextBlock Style="{StaticResource SettingsSectionTitle}" Text="キーボード" />
+                            <StackPanel Spacing="6">
+                                <TextBlock Text="キーボード配列" />
+                                <ComboBox x:Name="KeyboardLayoutCombo">
+                                    <x:String>jis</x:String>
+                                    <x:String>us</x:String>
+                                    <x:String>custom</x:String>
+                                </ComboBox>
+                            </StackPanel>
+                            <Grid ColumnSpacing="16" MinHeight="32">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="入力モード切替時に config.toml を再読込する" TextWrapping="Wrap" VerticalAlignment="Center" />
+                                <ToggleSwitch x:Name="ReloadOnModeSwitchToggle" Grid.Column="1" MinWidth="44" OnContent="" OffContent="" AutomationProperties.Name="入力モード切替時に config.toml を再読込する" />
+                            </Grid>
+                        </StackPanel>
+
+                        <StackPanel Spacing="10">
+                            <TextBlock Style="{StaticResource SettingsSectionTitle}" Text="入力モード" />
+                            <Grid ColumnSpacing="20" RowSpacing="10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" Spacing="6">
+                                    <TextBlock Text="起動時の IME 状態" />
+                                    <ComboBox x:Name="DefaultModeCombo">
+                                        <x:String>off</x:String>
+                                        <x:String>on</x:String>
                                     </ComboBox>
                                 </StackPanel>
-                                <ToggleSwitch x:Name="ReloadOnModeSwitchToggle" Header="入力モード切替時に config.toml を再読込する" />
-                            </StackPanel>
-                        </Border>
+                                <StackPanel Grid.Column="1" Spacing="6">
+                                    <TextBlock Text="数字の入力幅" />
+                                    <ComboBox x:Name="DigitWidthCombo">
+                                        <x:String>halfwidth</x:String>
+                                        <x:String>fullwidth</x:String>
+                                    </ComboBox>
+                                </StackPanel>
+                            </Grid>
+                            <Grid ColumnSpacing="10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" Spacing="6">
+                                    <TextBlock Text="英字の入力幅" />
+                                    <ComboBox x:Name="AlphaWidthCombo">
+                                        <x:String>fullwidth</x:String>
+                                        <x:String>halfwidth</x:String>
+                                    </ComboBox>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Spacing="6">
+                                    <TextBlock Text="記号の入力幅" />
+                                    <ComboBox x:Name="SymbolWidthCombo">
+                                        <x:String>fullwidth</x:String>
+                                        <x:String>halfwidth</x:String>
+                                    </ComboBox>
+                                </StackPanel>
+                            </Grid>
+                            <Grid ColumnSpacing="16" MinHeight="32">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="前回の IME オン/オフをアプリごとに記憶する" TextWrapping="Wrap" VerticalAlignment="Center" />
+                                <ToggleSwitch x:Name="RememberKanaModeToggle" Grid.Column="1" MinWidth="44" OnContent="" OffContent="" AutomationProperties.Name="前回の IME オン/オフをアプリごとに記憶する" />
+                            </Grid>
+                        </StackPanel>
 
-                        <Border Padding="20" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="16">
-                            <StackPanel Spacing="16">
-                                <TextBlock Style="{ThemeResource SubtitleTextBlockStyle}" Text="入力モード" />
-                                <Grid ColumnSpacing="20" RowSpacing="16">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Grid.Column="0" Spacing="8">
-                                        <TextBlock Text="起動時の IME 状態" />
-                                        <ComboBox x:Name="DefaultModeCombo">
-                                            <x:String>off</x:String>
-                                            <x:String>on</x:String>
-                                        </ComboBox>
-                                    </StackPanel>
-                                    <StackPanel Grid.Column="1" Spacing="8">
-                                        <TextBlock Text="数字の入力幅" />
-                                        <ComboBox x:Name="DigitWidthCombo">
-                                            <x:String>halfwidth</x:String>
-                                            <x:String>fullwidth</x:String>
-                                        </ComboBox>
-                                    </StackPanel>
-                                </Grid>
-                                <Grid ColumnSpacing="16">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Grid.Column="0" Spacing="8">
-                                        <TextBlock Text="英字の入力幅" />
-                                        <ComboBox x:Name="AlphaWidthCombo">
-                                            <x:String>fullwidth</x:String>
-                                            <x:String>halfwidth</x:String>
-                                        </ComboBox>
-                                    </StackPanel>
-                                    <StackPanel Grid.Column="1" Spacing="8">
-                                        <TextBlock Text="記号の入力幅" />
-                                        <ComboBox x:Name="SymbolWidthCombo">
-                                            <x:String>fullwidth</x:String>
-                                            <x:String>halfwidth</x:String>
-                                        </ComboBox>
-                                    </StackPanel>
-                                </Grid>
-                                <ToggleSwitch x:Name="RememberKanaModeToggle" Header="前回の IME オン/オフをアプリごとに記憶する" />
-                            </StackPanel>
-                        </Border>
-
-                        <Border Padding="20" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="16">
-                            <StackPanel Spacing="8">
-                                <TextBlock Style="{ThemeResource SubtitleTextBlockStyle}" Text="学習" />
-                                <TextBlock Opacity="0.7" Text="変換を確定するたびに、選択した候補を次回以降の優先順位に反映します。" />
-                                <ToggleSwitch x:Name="AutoLearnToggle" Header="変換確定時に学習する" />
-                            </StackPanel>
-                        </Border>
+                        <StackPanel Spacing="6">
+                            <TextBlock Style="{StaticResource SettingsSectionTitle}" Text="学習" />
+                            <TextBlock TextWrapping="Wrap" Opacity="0.7" Text="変換を確定するたびに、選択した候補を次回以降の優先順位に反映します。" />
+                            <Grid ColumnSpacing="16" MinHeight="32">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="変換確定時に学習する" TextWrapping="Wrap" VerticalAlignment="Center" />
+                                <ToggleSwitch x:Name="AutoLearnToggle" Grid.Column="1" MinWidth="44" OnContent="" OffContent="" AutomationProperties.Name="変換確定時に学習する" />
+                            </Grid>
+                        </StackPanel>
                     </StackPanel>
                 </ScrollViewer>
 
                 <ScrollViewer x:Name="KeysPage" Visibility="Collapsed">
-                    <StackPanel Margin="32,24,32,32" Spacing="20">
+                    <StackPanel Style="{StaticResource SettingsPageLayout}">
                         <StackPanel Spacing="4">
-                            <TextBlock Style="{ThemeResource TitleTextBlockStyle}" Text="キー設定" />
-                            <TextBlock Style="{ThemeResource BodyTextBlockStyle}" Opacity="0.7" Text="主要ショートカットはここで直接入力できます。例: Ctrl+Space, Henkan, Zenkaku" />
+                            <TextBlock Style="{StaticResource SettingsPageTitle}" Text="キー設定" />
+                            <TextBlock TextWrapping="Wrap" Style="{ThemeResource BodyTextBlockStyle}" Opacity="0.7" Text="主要ショートカットはここで直接入力できます。例: Ctrl+Space, Henkan, Zenkaku" />
                         </StackPanel>
 
-                        <Border Padding="20" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="16">
-                            <StackPanel Spacing="16">
-                                <TextBlock Style="{ThemeResource SubtitleTextBlockStyle}" Text="プリセット" />
-                                <StackPanel Spacing="8">
-                                    <TextBlock Text="キーバインドプリセット" />
-                                    <ComboBox x:Name="KeymapPresetCombo" SelectionChanged="KeymapPresetCombo_SelectionChanged">
-                                        <x:String>ms-ime-jis</x:String>
-                                        <x:String>ms-ime-us</x:String>
-                                        <x:String>custom</x:String>
-                                    </ComboBox>
-                                </StackPanel>
-                                <ToggleSwitch x:Name="KeymapInheritToggle" Header="プリセットをベースに主要ショートカットを上書きする" Toggled="KeymapInheritToggle_Toggled" />
+                        <StackPanel Spacing="10">
+                            <TextBlock Style="{StaticResource SettingsSectionTitle}" Text="プリセット" />
+                            <StackPanel Spacing="6">
+                                <TextBlock Text="キーバインドプリセット" />
+                                <ComboBox x:Name="KeymapPresetCombo" SelectionChanged="KeymapPresetCombo_SelectionChanged">
+                                    <x:String>ms-ime-jis</x:String>
+                                    <x:String>ms-ime-us</x:String>
+                                    <x:String>custom</x:String>
+                                </ComboBox>
                             </StackPanel>
-                        </Border>
+                            <Grid ColumnSpacing="16" MinHeight="32">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="プリセットをベースに主要ショートカットを上書きする" TextWrapping="Wrap" VerticalAlignment="Center" />
+                                <ToggleSwitch x:Name="KeymapInheritToggle" Toggled="KeymapInheritToggle_Toggled" Grid.Column="1" MinWidth="44" OnContent="" OffContent="" AutomationProperties.Name="プリセットをベースに主要ショートカットを上書きする" />
+                            </Grid>
+                        </StackPanel>
 
-                        <Border Padding="20" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="16">
-                            <StackPanel Spacing="14">
-                                <TextBlock Style="{ThemeResource SubtitleTextBlockStyle}" Text="主要ショートカット" />
-                                <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
-                                    <TextBlock Opacity="0.7" VerticalAlignment="Center" Text="対応するキー名を直接入力してください。例: Ctrl+Space, Henkan, Zenkaku" />
-                                    <Button Content="キー名の一覧と注意" Padding="10,4">
-                                        <Button.Flyout>
-                                            <Flyout Placement="Bottom">
-                                                <!-- FlyoutPresenter の既定 MaxWidth は 456px で等幅の一覧が切れるため広げる -->
-                                                <Flyout.FlyoutPresenterStyle>
-                                                    <Style TargetType="FlyoutPresenter">
-                                                        <Setter Property="MaxWidth" Value="820" />
-                                                        <Setter Property="MaxHeight" Value="640" />
-                                                        <Setter Property="Padding" Value="16" />
-                                                    </Style>
-                                                </Flyout.FlyoutPresenterStyle>
-                                                <ScrollViewer MaxHeight="600" Width="760" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-                                                    <StackPanel Spacing="10" Padding="4">
-                                                        <TextBlock Style="{ThemeResource SubtitleTextBlockStyle}" Text="使えるキー名" />
-                                                        <TextBlock TextWrapping="Wrap" Text="大文字小文字は区別しません。修飾キーは「+」でつなげます（例: Ctrl+Space, Shift+Tab, RAlt+Caps）。" />
-                                                        <TextBlock IsTextSelectionEnabled="True" FontFamily="Consolas" TextWrapping="Wrap" Text="修飾キー  : Ctrl(Control), Shift, Alt  … 左右どちらでも一致&#x0a;            LCtrl, RCtrl, LShift, RShift, LAlt, RAlt  … 左右を区別&#x0a;基本      : Backspace(BS), Tab, Enter(Return), Escape(Esc), Space, Delete(Del)&#x0a;移動      : Left, Right, Up, Down, Home, End, PageUp(PgUp), PageDown(PgDn)&#x0a;ファンクション: F1 〜 F12&#x0a;記号      : Backquote(Grave), Semicolon, Equal, Comma, Minus, Period, Slash,&#x0a;            LeftBracket, Backslash, RightBracket, Quote&#x0a;日本語キー: Zenkaku(Hankaku, Kanji), Henkan, Muhenkan, Eisuu(Alphanumeric),&#x0a;            Katakana, Hiragana_key, Caps&#x0a;英字      : A 〜 Z の 1 文字" />
-                                                        <TextBlock Style="{ThemeResource SubtitleTextBlockStyle}" Text="注意" />
-                                                        <TextBlock TextWrapping="Wrap" Text="• 数字キー 0〜9 は候補選択に使うため割り当てできません。" />
-                                                        <TextBlock TextWrapping="Wrap" Text="• Insert, PrintScreen, ScrollLock, Pause, Apps, F13 以降, テンキー, メディアキー, Win キーは使えません。" />
-                                                        <TextBlock TextWrapping="Wrap" Text="• 修飾キー単独（Ctrl だけ等）は割り当てできません。修飾キーなしの英字 1 文字は書式上通りますが、その文字の入力を上書きします。" />
-                                                        <TextBlock TextWrapping="Wrap" Text="• 左右指定（LCtrl 等）と汎用指定（Ctrl）の両方に同じキーがあるときは、左右指定が優先されます。" />
-                                                        <TextBlock TextWrapping="Wrap" Text="• 日本語キー（Zenkaku, Henkan, Muhenkan, Eisuu, Katakana, Hiragana_key）は日本語キーボードでのみ使えます。" />
-                                                        <TextBlock TextWrapping="Wrap" Text="• Alt+Tab や Win キーの組み合わせなど Windows が先に処理するキー、ブラウザの Ctrl+L のようにアプリが IME より先に処理するキーは、設定しても効きません。" />
-                                                        <TextBlock TextWrapping="Wrap" Text="• 一つのアクションに複数のキーを割り当てたい場合や、ここに無いアクションは「詳細編集」から keymap.toml を編集してください。" />
-                                                    </StackPanel>
-                                                </ScrollViewer>
-                                            </Flyout>
-                                        </Button.Flyout>
-                                    </Button>
-                                </StackPanel>
+                        <StackPanel Spacing="14">
+                            <TextBlock Style="{StaticResource SettingsSectionTitle}" Text="主要ショートカット" />
+                            <Grid ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock TextWrapping="Wrap" Opacity="0.7" VerticalAlignment="Center" Text="対応するキー名を直接入力してください。例: Ctrl+Space, Henkan, Zenkaku" />
+                                <Button Grid.Column="1" VerticalAlignment="Center" Content="キー名の一覧と注意" Padding="10,4">
+                                    <Button.Flyout>
+                                        <Flyout Placement="Bottom">
+                                            <!-- FlyoutPresenter の既定 MaxWidth は 456px で等幅の一覧が切れるため広げる -->
+                                            <Flyout.FlyoutPresenterStyle>
+                                                <Style TargetType="FlyoutPresenter">
+                                                    <Setter Property="MaxWidth" Value="820" />
+                                                    <Setter Property="MaxHeight" Value="640" />
+                                                    <Setter Property="Padding" Value="16" />
+                                                </Style>
+                                            </Flyout.FlyoutPresenterStyle>
+                                            <ScrollViewer MaxHeight="600" Width="760" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                                                <StackPanel Spacing="10" Padding="4">
+                                                    <TextBlock Style="{StaticResource SettingsSectionTitle}" Text="使えるキー名" />
+                                                    <TextBlock TextWrapping="Wrap" Text="大文字小文字は区別しません。修飾キーは「+」でつなげます（例: Ctrl+Space, Shift+Tab, RAlt+Caps）。" />
+                                                    <TextBlock IsTextSelectionEnabled="True" FontFamily="Consolas" TextWrapping="Wrap" Text="修飾キー  : Ctrl(Control), Shift, Alt  … 左右どちらでも一致&#x0a;            LCtrl, RCtrl, LShift, RShift, LAlt, RAlt  … 左右を区別&#x0a;基本      : Backspace(BS), Tab, Enter(Return), Escape(Esc), Space, Delete(Del)&#x0a;移動      : Left, Right, Up, Down, Home, End, PageUp(PgUp), PageDown(PgDn)&#x0a;ファンクション: F1 〜 F12&#x0a;記号      : Backquote(Grave), Semicolon, Equal, Comma, Minus, Period, Slash,&#x0a;            LeftBracket, Backslash, RightBracket, Quote&#x0a;日本語キー: Zenkaku(Hankaku, Kanji), Henkan, Muhenkan, Eisuu(Alphanumeric),&#x0a;            Katakana, Hiragana_key, Caps&#x0a;英字      : A 〜 Z の 1 文字" />
+                                                    <TextBlock Style="{StaticResource SettingsSectionTitle}" Text="注意" />
+                                                    <TextBlock TextWrapping="Wrap" Text="• 数字キー 0〜9 は候補選択に使うため割り当てできません。" />
+                                                    <TextBlock TextWrapping="Wrap" Text="• Insert, PrintScreen, ScrollLock, Pause, Apps, F13 以降, テンキー, メディアキー, Win キーは使えません。" />
+                                                    <TextBlock TextWrapping="Wrap" Text="• 修飾キー単独（Ctrl だけ等）は割り当てできません。修飾キーなしの英字 1 文字は書式上通りますが、その文字の入力を上書きします。" />
+                                                    <TextBlock TextWrapping="Wrap" Text="• 左右指定（LCtrl 等）と汎用指定（Ctrl）の両方に同じキーがあるときは、左右指定が優先されます。" />
+                                                    <TextBlock TextWrapping="Wrap" Text="• 日本語キー（Zenkaku, Henkan, Muhenkan, Eisuu, Katakana, Hiragana_key）は日本語キーボードでのみ使えます。" />
+                                                    <TextBlock TextWrapping="Wrap" Text="• Alt+Tab や Win キーの組み合わせなど Windows が先に処理するキー、ブラウザの Ctrl+L のようにアプリが IME より先に処理するキーは、設定しても効きません。" />
+                                                    <TextBlock TextWrapping="Wrap" Text="• 一つのアクションに複数のキーを割り当てたい場合や、ここに無いアクションは「詳細編集」から keymap.toml を編集してください。" />
+                                                </StackPanel>
+                                            </ScrollViewer>
+                                        </Flyout>
+                                    </Button.Flyout>
+                                </Button>
+                            </Grid>
 
-                                <Grid ColumnSpacing="16" RowSpacing="12">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="220" />
-                                        <ColumnDefinition Width="280" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
-                                    </Grid.RowDefinitions>
+                            <Grid ColumnSpacing="10" RowSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="160" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
 
-                                    <TextBlock Grid.Row="0" VerticalAlignment="Center" Text="IME 切替" />
-                                    <TextBox Grid.Row="0" Grid.Column="1" x:Name="ImeToggleBox" PlaceholderText="Ctrl+Space / Zenkaku" />
-                                    <Button Grid.Row="0" Grid.Column="2" Tag="ImeToggle" Click="ClearKeyButton_Click" Content="解除" />
+                                <TextBlock Grid.Row="0" VerticalAlignment="Center" Text="IME 切替" />
+                                <TextBox Grid.Row="0" Grid.Column="1" x:Name="ImeToggleBox" PlaceholderText="Ctrl+Space / Zenkaku" />
+                                <Button Grid.Row="0" Grid.Column="2" Tag="ImeToggle" Click="ClearKeyButton_Click" Content="解除" />
 
-                                    <TextBlock Grid.Row="1" VerticalAlignment="Center" Text="IME ON" />
-                                    <TextBox Grid.Row="1" Grid.Column="1" x:Name="ImeOnBox" PlaceholderText="Hiragana_key / Ctrl+J" />
-                                    <Button Grid.Row="1" Grid.Column="2" Tag="ImeOn" Click="ClearKeyButton_Click" Content="解除" />
+                                <TextBlock Grid.Row="1" VerticalAlignment="Center" Text="IME ON" />
+                                <TextBox Grid.Row="1" Grid.Column="1" x:Name="ImeOnBox" PlaceholderText="Hiragana_key / Ctrl+J" />
+                                <Button Grid.Row="1" Grid.Column="2" Tag="ImeOn" Click="ClearKeyButton_Click" Content="解除" />
 
-                                    <TextBlock Grid.Row="2" VerticalAlignment="Center" Text="IME OFF" />
-                                    <TextBox Grid.Row="2" Grid.Column="1" x:Name="ImeOffBox" PlaceholderText="Eisuu / Ctrl+L" />
-                                    <Button Grid.Row="2" Grid.Column="2" Tag="ImeOff" Click="ClearKeyButton_Click" Content="解除" />
+                                <TextBlock Grid.Row="2" VerticalAlignment="Center" Text="IME OFF" />
+                                <TextBox Grid.Row="2" Grid.Column="1" x:Name="ImeOffBox" PlaceholderText="Eisuu / Ctrl+L" />
+                                <Button Grid.Row="2" Grid.Column="2" Tag="ImeOff" Click="ClearKeyButton_Click" Content="解除" />
 
-                                    <TextBlock Grid.Row="3" VerticalAlignment="Center" Text="変換開始" />
-                                    <TextBox Grid.Row="3" Grid.Column="1" x:Name="ConvertBox" PlaceholderText="Space / Henkan" />
-                                    <Button Grid.Row="3" Grid.Column="2" Tag="Convert" Click="ClearKeyButton_Click" Content="解除" />
+                                <TextBlock Grid.Row="3" VerticalAlignment="Center" Text="変換開始" />
+                                <TextBox Grid.Row="3" Grid.Column="1" x:Name="ConvertBox" PlaceholderText="Space / Henkan" />
+                                <Button Grid.Row="3" Grid.Column="2" Tag="Convert" Click="ClearKeyButton_Click" Content="解除" />
 
-                                    <TextBlock Grid.Row="4" VerticalAlignment="Center" Text="ひらがな確定" />
-                                    <TextBox Grid.Row="4" Grid.Column="1" x:Name="CommitRawBox" PlaceholderText="Enter" />
-                                    <Button Grid.Row="4" Grid.Column="2" Tag="CommitRaw" Click="ClearKeyButton_Click" Content="解除" />
+                                <TextBlock Grid.Row="4" VerticalAlignment="Center" Text="ひらがな確定" />
+                                <TextBox Grid.Row="4" Grid.Column="1" x:Name="CommitRawBox" PlaceholderText="Enter" />
+                                <Button Grid.Row="4" Grid.Column="2" Tag="CommitRaw" Click="ClearKeyButton_Click" Content="解除" />
 
-                                    <TextBlock Grid.Row="5" VerticalAlignment="Center" Text="取消" />
-                                    <TextBox Grid.Row="5" Grid.Column="1" x:Name="CancelBox" PlaceholderText="Escape" />
-                                    <Button Grid.Row="5" Grid.Column="2" Tag="Cancel" Click="ClearKeyButton_Click" Content="解除" />
+                                <TextBlock Grid.Row="5" VerticalAlignment="Center" Text="取消" />
+                                <TextBox Grid.Row="5" Grid.Column="1" x:Name="CancelBox" PlaceholderText="Escape" />
+                                <Button Grid.Row="5" Grid.Column="2" Tag="Cancel" Click="ClearKeyButton_Click" Content="解除" />
 
-                                    <TextBlock Grid.Row="6" VerticalAlignment="Center" Text="全取消" />
-                                    <TextBox Grid.Row="6" Grid.Column="1" x:Name="CancelAllBox" PlaceholderText="Ctrl+Backspace" />
-                                    <Button Grid.Row="6" Grid.Column="2" Tag="CancelAll" Click="ClearKeyButton_Click" Content="解除" />
-                                </Grid>
+                                <TextBlock Grid.Row="6" VerticalAlignment="Center" Text="全取消" />
+                                <TextBox Grid.Row="6" Grid.Column="1" x:Name="CancelAllBox" PlaceholderText="Ctrl+Backspace" />
+                                <Button Grid.Row="6" Grid.Column="2" Tag="CancelAll" Click="ClearKeyButton_Click" Content="解除" />
+                            </Grid>
+                        </StackPanel>
+
+                        <StackPanel Spacing="12">
+                            <TextBlock Style="{StaticResource SettingsSectionTitle}" Text="詳細編集" />
+                            <TextBlock TextWrapping="Wrap" Opacity="0.7" Text="複数キーの割り当てや未表示のアクションは keymap.toml から調整できます。" />
+                            <StackPanel Orientation="Horizontal" Spacing="12">
+                                <Button Content="keymap.toml を開く" Click="OpenKeymapButton_Click" />
                             </StackPanel>
-                        </Border>
-
-                        <Border Padding="20" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="16">
-                            <StackPanel Spacing="12">
-                                <TextBlock Style="{ThemeResource SubtitleTextBlockStyle}" Text="詳細編集" />
-                                <TextBlock Opacity="0.7" Text="複数キーの割り当てや未表示のアクションは keymap.toml から調整できます。" />
-                                <StackPanel Orientation="Horizontal" Spacing="12">
-                                    <Button Content="keymap.toml を開く" Click="OpenKeymapButton_Click" />
-                                </StackPanel>
-                            </StackPanel>
-                        </Border>
+                        </StackPanel>
                     </StackPanel>
                 </ScrollViewer>
 
                 <ScrollViewer x:Name="LivePage" Visibility="Collapsed">
-                    <StackPanel Margin="32,24,32,32" Spacing="20">
+                    <StackPanel Style="{StaticResource SettingsPageLayout}">
                         <StackPanel Spacing="4">
-                            <TextBlock Style="{ThemeResource TitleTextBlockStyle}" Text="ライブ変換" />
-                            <TextBlock Style="{ThemeResource BodyTextBlockStyle}" Opacity="0.7" Text="ライブ変換の反応速度と候補生成の方針を設定します。" />
+                            <TextBlock Style="{StaticResource SettingsPageTitle}" Text="ライブ変換" />
+                            <TextBlock TextWrapping="Wrap" Style="{ThemeResource BodyTextBlockStyle}" Opacity="0.7" Text="ライブ変換の反応速度と候補生成の方針を設定します。" />
                         </StackPanel>
 
-                        <Border Padding="20" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="16">
-                            <StackPanel Spacing="16">
-                                <ToggleSwitch x:Name="LiveEnabledToggle" Header="ライブ変換を有効にする" />
-                                <Grid ColumnSpacing="20">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Grid.Column="0" Spacing="8">
-                                        <TextBlock Text="デバウンス (ms)" />
-                                        <NumberBox x:Name="DebounceMsBox" SmallChange="10" SpinButtonPlacementMode="Compact" />
-                                    </StackPanel>
-                                    <StackPanel Grid.Column="1" Spacing="8">
-                                        <TextBlock Text="beam_size (1-9)" />
-                                        <NumberBox x:Name="BeamSizeBox" SmallChange="1" Minimum="1" Maximum="9" SpinButtonPlacementMode="Compact" />
-                                    </StackPanel>
-                                    <StackPanel Grid.Column="2" Spacing="8">
-                                        <TextBlock Text="開始文字数 (1-9)" />
-                                        <NumberBox x:Name="MinCharsBox" SmallChange="1" Minimum="1" Maximum="9" SpinButtonPlacementMode="Compact" />
-                                    </StackPanel>
-                                </Grid>
-                                <ToggleSwitch x:Name="UseLlmToggle" Header="LLM をライブ変換に使う" />
-                                <ToggleSwitch x:Name="PreferDictionaryFirstToggle" Header="辞書候補を優先してから LLM 候補を使う" />
-                            </StackPanel>
-                        </Border>
+                        <StackPanel Spacing="10">
+                            <Grid ColumnSpacing="16" MinHeight="32">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="ライブ変換を有効にする" TextWrapping="Wrap" VerticalAlignment="Center" />
+                                <ToggleSwitch x:Name="LiveEnabledToggle" Grid.Column="1" MinWidth="44" OnContent="" OffContent="" AutomationProperties.Name="ライブ変換を有効にする" />
+                            </Grid>
+                            <Grid ColumnSpacing="20">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" Spacing="6">
+                                    <TextBlock Text="デバウンス (ms)" />
+                                    <NumberBox x:Name="DebounceMsBox" SmallChange="10" SpinButtonPlacementMode="Compact" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Spacing="6">
+                                    <TextBlock Text="beam_size (1-9)" />
+                                    <NumberBox x:Name="BeamSizeBox" SmallChange="1" Minimum="1" Maximum="9" SpinButtonPlacementMode="Compact" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="2" Spacing="6">
+                                    <TextBlock Text="開始文字数 (1-9)" />
+                                    <NumberBox x:Name="MinCharsBox" SmallChange="1" Minimum="1" Maximum="9" SpinButtonPlacementMode="Compact" />
+                                </StackPanel>
+                            </Grid>
+                            <Grid ColumnSpacing="16" MinHeight="32">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="LLM をライブ変換に使う" TextWrapping="Wrap" VerticalAlignment="Center" />
+                                <ToggleSwitch x:Name="UseLlmToggle" Grid.Column="1" MinWidth="44" OnContent="" OffContent="" AutomationProperties.Name="LLM をライブ変換に使う" />
+                            </Grid>
+                            <Grid ColumnSpacing="16" MinHeight="32">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="辞書候補を優先してから LLM 候補を使う" TextWrapping="Wrap" VerticalAlignment="Center" />
+                                <ToggleSwitch x:Name="PreferDictionaryFirstToggle" Grid.Column="1" MinWidth="44" OnContent="" OffContent="" AutomationProperties.Name="辞書候補を優先してから LLM 候補を使う" />
+                            </Grid>
+                        </StackPanel>
                     </StackPanel>
                 </ScrollViewer>
 
                 <ScrollViewer x:Name="UserDictPage" Visibility="Collapsed">
-                    <StackPanel Margin="32,24,32,32" Spacing="20">
+                    <StackPanel Style="{StaticResource SettingsPageLayout}">
                         <StackPanel Spacing="4">
-                            <TextBlock Style="{ThemeResource TitleTextBlockStyle}" Text="ユーザー辞書" />
-                            <TextBlock Style="{ThemeResource BodyTextBlockStyle}" Opacity="0.7" Text="読み (ひらがな) に対応する変換候補を登録します。登録語は他候補より優先されます。" />
+                            <TextBlock Style="{StaticResource SettingsPageTitle}" Text="ユーザー辞書" />
+                            <TextBlock TextWrapping="Wrap" Style="{ThemeResource BodyTextBlockStyle}" Opacity="0.7" Text="読み (ひらがな) に対応する変換候補を登録します。登録語は他候補より優先されます。" />
                         </StackPanel>
 
-                        <Border Padding="20" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="16">
-                            <StackPanel Spacing="12">
-                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <Button Content="追加" Click="UserDictAddButton_Click" />
-                                    <Button Content="編集" Click="UserDictEditButton_Click" />
-                                    <Button Content="削除" Click="UserDictDeleteButton_Click" />
-                                    <AppBarSeparator />
-                                    <Button Content="user_dict.toml を開く" Click="OpenUserDictButton_Click" />
-                                </StackPanel>
-                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <Button Content="インポート…" Click="UserDictImportButton_Click" />
-                                    <Button Content="エクスポート…" Click="UserDictExportButton_Click" />
-                                </StackPanel>
-                                <TextBlock Text="タブ区切りの辞書（読み・単語・品詞・コメント）に対応。インポートは既存の辞書に追加し、保存時に反映します。エクスポートには編集中の項目も含まれます。" TextWrapping="Wrap" Opacity="0.7" />
-                                <Grid ColumnSpacing="12" Padding="12,8,12,8" Background="{ThemeResource ControlFillColorSecondaryBrush}">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="200" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="読み" FontWeight="SemiBold" />
-                                    <TextBlock Grid.Column="1" Text="変換候補（先頭優先）" FontWeight="SemiBold" />
-                                </Grid>
-                                <ListView
-                                    x:Name="UserDictList"
-                                    MinHeight="380"
-                                    SelectionMode="Single"
-                                    DoubleTapped="UserDictList_DoubleTapped">
-                                    <ListView.ItemTemplate>
-                                        <DataTemplate>
-                                            <Grid ColumnSpacing="12">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="200" />
-                                                    <ColumnDefinition Width="*" />
-                                                </Grid.ColumnDefinitions>
-                                                <TextBlock Grid.Column="0" Text="{Binding Reading}" />
-                                                <TextBlock Grid.Column="1" Text="{Binding SurfacesJoined}" TextWrapping="Wrap" />
-                                            </Grid>
-                                        </DataTemplate>
-                                    </ListView.ItemTemplate>
-                                </ListView>
+                        <StackPanel Spacing="12">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <Button Content="追加" Click="UserDictAddButton_Click" />
+                                <Button Content="編集" Click="UserDictEditButton_Click" />
+                                <Button Content="削除" Click="UserDictDeleteButton_Click" />
+                                <AppBarSeparator />
+                                <Button Content="user_dict.toml を開く" Click="OpenUserDictButton_Click" />
                             </StackPanel>
-                        </Border>
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <Button Content="インポート…" Click="UserDictImportButton_Click" />
+                                <Button Content="エクスポート…" Click="UserDictExportButton_Click" />
+                            </StackPanel>
+                            <TextBlock Text="タブ区切りの辞書（読み・単語・品詞・コメント）に対応。インポートは既存の辞書に追加し、保存時に反映します。エクスポートには編集中の項目も含まれます。" TextWrapping="Wrap" Opacity="0.7" />
+                            <Grid ColumnSpacing="12" Padding="12,8,12,8" Background="{ThemeResource ControlFillColorSecondaryBrush}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="200" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="読み" FontWeight="SemiBold" />
+                                <TextBlock Grid.Column="1" Text="変換候補（先頭優先）" FontWeight="SemiBold" />
+                            </Grid>
+                            <ListView
+                                x:Name="UserDictList"
+                                MinHeight="160"
+                                SelectionMode="Single"
+                                DoubleTapped="UserDictList_DoubleTapped">
+                                <ListView.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid ColumnSpacing="12">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="200" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="{Binding Reading}" />
+                                            <TextBlock Grid.Column="1" Text="{Binding SurfacesJoined}" TextWrapping="Wrap" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListView.ItemTemplate>
+                            </ListView>
+                        </StackPanel>
                     </StackPanel>
                 </ScrollViewer>
 
                 <ScrollViewer x:Name="AdvancedPage" Visibility="Collapsed">
-                    <StackPanel Margin="32,24,32,32" Spacing="20">
+                    <StackPanel Style="{StaticResource SettingsPageLayout}">
                         <StackPanel Spacing="4">
-                            <TextBlock Style="{ThemeResource TitleTextBlockStyle}" Text="補足" />
-                            <TextBlock Style="{ThemeResource BodyTextBlockStyle}" Opacity="0.7" Text="設定ファイルを直接開いたり、反映タイミングを確認できます。" />
+                            <TextBlock Style="{StaticResource SettingsPageTitle}" Text="補足" />
+                            <TextBlock TextWrapping="Wrap" Style="{ThemeResource BodyTextBlockStyle}" Opacity="0.7" Text="設定ファイルを直接開いたり、反映タイミングを確認できます。" />
                         </StackPanel>
 
-                        <Border Padding="20" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="16">
-                            <StackPanel Spacing="12">
-                                <TextBlock Style="{ThemeResource SubtitleTextBlockStyle}" Text="設定ファイル" />
-                                <TextBlock Opacity="0.7" Text="保存時または画面を閉じたときに、現在の IME へ反映します。" />
-                                <StackPanel Orientation="Horizontal" Spacing="12">
-                                    <Button Content="config.toml を開く" Click="OpenConfigButton_Click" />
-                                    <Button Content="keymap.toml を開く" Click="OpenKeymapButton_Click" />
-                                </StackPanel>
+                        <StackPanel Spacing="12">
+                            <TextBlock Style="{StaticResource SettingsSectionTitle}" Text="設定ファイル" />
+                            <TextBlock TextWrapping="Wrap" Opacity="0.7" Text="保存時または画面を閉じたときに、現在の IME へ反映します。" />
+                            <StackPanel Orientation="Horizontal" Spacing="12">
+                                <Button Content="config.toml を開く" Click="OpenConfigButton_Click" />
+                                <Button Content="keymap.toml を開く" Click="OpenKeymapButton_Click" />
                             </StackPanel>
-                        </Border>
+                        </StackPanel>
                     </StackPanel>
                 </ScrollViewer>
             </Grid>
@@ -527,20 +566,19 @@
 
         <Border
             Grid.Row="2"
-            Margin="16,12,16,16"
-            Padding="16"
+            Margin="12,0,12,0"
+            Padding="12,10"
             Background="{ThemeResource LayerFillColorDefaultBrush}"
             BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-            BorderThickness="1"
-            CornerRadius="16">
-            <Grid ColumnSpacing="16">
+            BorderThickness="0,1,0,0">
+            <Grid ColumnSpacing="10">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
-                <TextBlock VerticalAlignment="Center" Opacity="0.7" Text="変更内容は保存時または画面を閉じたときに、現在の IME へ反映されます。" />
+                <TextBlock TextWrapping="Wrap" VerticalAlignment="Center" Opacity="0.7" Text="変更内容は保存時または画面を閉じたときに、現在の IME へ反映されます。" />
                 <Button Grid.Column="1" Click="SaveButton_Click" Content="保存" Style="{StaticResource AccentButtonStyle}" />
                 <Button Grid.Column="2" Click="CloseButton_Click" Content="閉じる" />
             </Grid>
