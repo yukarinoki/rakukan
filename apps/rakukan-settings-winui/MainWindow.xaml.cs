@@ -843,8 +843,8 @@ public sealed partial class MainWindow : Window
     // 拡大しないと高 DPI 環境でウィンドウが小さくなり中身が収まらない。
     private void ResizeToDefaultSize()
     {
-        const int baseWidth = 1080;
-        const int baseHeight = 760;
+        const int baseWidth = 720;
+        const int baseHeight = 507;
 
         var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
         var dpi = GetDpiForWindow(hwnd);
