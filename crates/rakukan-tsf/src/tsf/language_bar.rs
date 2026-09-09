@@ -139,14 +139,14 @@ use windows::Win32::Graphics::Gdi::HDC;
 use windows::Win32::Graphics::Gdi::{
     BI_RGB, BITMAPINFO, BITMAPINFOHEADER, CreateCompatibleDC, CreateDIBSection, CreateFontW,
     DIB_RGB_COLORS, DT_CENTER, DT_SINGLELINE, DT_VCENTER, DeleteDC, DeleteObject, DrawTextW,
-    HBITMAP, HFONT, SelectObject, SetBkMode, SetTextColor, TRANSPARENT,
+    SelectObject, SetBkMode, SetTextColor, TRANSPARENT,
 };
 use windows::Win32::UI::WindowsAndMessaging::{CreateIconIndirect, ICONINFO};
 
 /// テーマ (ライト/ダーク) を検出する。判定不能時はダークと見なす。
 pub fn is_light_mode() -> bool {
     use windows::Win32::System::Registry::{
-        HKEY_CURRENT_USER, KEY_READ, REG_DWORD, RegOpenKeyExW, RegQueryValueExW,
+        HKEY_CURRENT_USER, KEY_READ, REG_DWORD, RegCloseKey, RegOpenKeyExW, RegQueryValueExW,
     };
     unsafe {
         let mut hkey = Default::default();
@@ -172,7 +172,7 @@ pub fn is_light_mode() -> bool {
         let mut data = 0u32;
         let mut size = 4u32;
         let mut kind = REG_DWORD;
-        if RegQueryValueExW(
+        let result = if RegQueryValueExW(
             hkey,
             windows::core::PCWSTR(val_name.as_ptr()),
             None,
@@ -185,136 +185,221 @@ pub fn is_light_mode() -> bool {
             data != 0
         } else {
             false
-        }
+        };
+        let _ = RegCloseKey(hkey);
+        result
     }
 }
 
-/// モード文字（"あ" / "ア" / "A"）から 16x16 HICON を動的生成する。
-pub fn create_mode_icon(text: &str) -> windows::core::Result<HICON> {
-    const SIZE: i32 = 16;
-    let bmi = BITMAPINFO {
+/// Render at the taskbar's actual small-icon resolution, even inside a DPI-unaware app.
+fn mode_icon_size() -> i32 {
+    use windows::Win32::UI::{
+        HiDpi::{GetDpiForSystem, GetDpiForWindow, GetSystemMetricsForDpi},
+        WindowsAndMessaging::{FindWindowW, SM_CXSMICON},
+    };
+    unsafe {
+        let dpi = FindWindowW(windows::core::w!("Shell_TrayWnd"), None)
+            .ok()
+            .map(|hwnd| GetDpiForWindow(hwnd))
+            .filter(|dpi| *dpi != 0)
+            .unwrap_or_else(|| GetDpiForSystem().max(96));
+        GetSystemMetricsForDpi(SM_CXSMICON, dpi).clamp(16, 128)
+    }
+}
+
+fn bitmap_info(size: i32) -> BITMAPINFO {
+    BITMAPINFO {
         bmiHeader: BITMAPINFOHEADER {
             biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
-            biWidth: SIZE,
-            biHeight: -SIZE, // top-down
+            biWidth: size,
+            biHeight: -size,
             biPlanes: 1,
             biBitCount: 32,
             biCompression: BI_RGB.0,
             ..Default::default()
         },
         ..Default::default()
-    };
-    let mut bits: *mut core::ffi::c_void = null_mut();
-    let hdc = unsafe { CreateCompatibleDC(HDC(null_mut())) };
-    let hbmp: HBITMAP = unsafe { CreateDIBSection(hdc, &bmi, DIB_RGB_COLORS, &mut bits, None, 0)? };
-    let old = unsafe { SelectObject(hdc, hbmp) };
+    }
+}
 
-    // 背景塗り (テーマ対応)
-    let light = is_light_mode();
-    if !bits.is_null() {
-        let p = bits as *mut u8;
-        let (br, bg, bb) = if light {
-            (240u8, 240u8, 240u8)
+/// Draw a monochrome coverage mask at 4x resolution, then form premultiplied BGRA.
+/// GDI's alpha bytes are undefined; coverage comes from RGB, never from GDI alpha.
+fn mode_icon_pixels(text: &str, size: i32, light: bool) -> windows::core::Result<Vec<u8>> {
+    const SCALE: i32 = 4;
+    let high = size * SCALE;
+    unsafe {
+        let dc = CreateCompatibleDC(HDC::default());
+        if dc.is_invalid() {
+            return Err(windows::core::Error::from_win32());
+        }
+        let mut bits = null_mut();
+        let bitmap =
+            match CreateDIBSection(dc, &bitmap_info(high), DIB_RGB_COLORS, &mut bits, None, 0) {
+                Ok(bitmap) => bitmap,
+                Err(error) => {
+                    let _ = DeleteDC(dc);
+                    return Err(error);
+                }
+            };
+        let old_bitmap = SelectObject(dc, bitmap);
+        let font = CreateFontW(
+            -(high * 14 / 16),
+            0,
+            0,
+            0,
+            500,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            windows::Win32::Graphics::Gdi::NONANTIALIASED_QUALITY.0 as u32,
+            0,
+            windows::core::w!("Yu Gothic UI"),
+        );
+        let old_font = SelectObject(dc, font);
+        let result = (|| {
+            if bits.is_null() || font.is_invalid() {
+                return Err(windows::core::Error::from_win32());
+            }
+            std::ptr::write_bytes(bits.cast::<u8>(), 0, (high * high * 4) as usize);
+            SetBkMode(dc, TRANSPARENT);
+            SetTextColor(dc, windows::Win32::Foundation::COLORREF(0x00ffffff));
+            let mut rect = windows::Win32::Foundation::RECT {
+                left: 0,
+                top: 0,
+                right: high,
+                bottom: high,
+            };
+            let mut text: Vec<u16> = text.encode_utf16().collect();
+            if DrawTextW(
+                dc,
+                &mut text,
+                &mut rect,
+                DT_CENTER | DT_VCENTER | DT_SINGLELINE,
+            ) == 0
+            {
+                return Err(windows::core::Error::from_win32());
+            }
+            // Complete any batched GDI writes before reading the DIB memory.
+            let _ = windows::Win32::Graphics::Gdi::GdiFlush();
+            let source = std::slice::from_raw_parts(bits.cast::<u8>(), (high * high * 4) as usize);
+            let mut pixels = vec![0u8; (size * size * 4) as usize];
+            for y in 0..size {
+                for x in 0..size {
+                    let mut coverage = 0u32;
+                    for dy in 0..SCALE {
+                        for dx in 0..SCALE {
+                            coverage += u32::from(
+                                source[(((y * SCALE + dy) * high + x * SCALE + dx) * 4) as usize],
+                            );
+                        }
+                    }
+                    let alpha = ((coverage + 8) / 16) as u8;
+                    let offset = ((y * size + x) * 4) as usize;
+                    let color = if light { 0 } else { alpha };
+                    pixels[offset..offset + 4].copy_from_slice(&[color, color, color, alpha]);
+                }
+            }
+            Ok(pixels)
+        })();
+        let _ = SelectObject(dc, old_font);
+        let _ = DeleteObject(font);
+        let _ = SelectObject(dc, old_bitmap);
+        let _ = DeleteObject(bitmap);
+        let _ = DeleteDC(dc);
+        result
+    }
+}
+
+/// The caller owns the returned HICON, as required by ITfLangBarItemButton::GetIcon.
+pub fn create_mode_icon(text: &str) -> windows::core::Result<HICON> {
+    let size = mode_icon_size();
+    let pixels = mode_icon_pixels(text, size, is_light_mode())?;
+    unsafe {
+        let mut bits = null_mut();
+        let bitmap = CreateDIBSection(
+            HDC::default(),
+            &bitmap_info(size),
+            DIB_RGB_COLORS,
+            &mut bits,
+            None,
+            0,
+        )?;
+        std::ptr::copy_nonoverlapping(pixels.as_ptr(), bits.cast::<u8>(), pixels.len());
+        // Legacy AND mask: 1 = transparent. Rows are WORD aligned, including 24px icons.
+        let stride = ((size + 15) / 16 * 2) as usize;
+        let mut mask_bits = vec![0xffu8; stride * size as usize];
+        for y in 0..size as usize {
+            for x in 0..size as usize {
+                if pixels[(y * size as usize + x) * 4 + 3] != 0 {
+                    mask_bits[y * stride + x / 8] &= !(0x80 >> (x % 8));
+                }
+            }
+        }
+        let mask = windows::Win32::Graphics::Gdi::CreateBitmap(
+            size,
+            size,
+            1,
+            1,
+            Some(mask_bits.as_ptr().cast()),
+        );
+        let result = if mask.is_invalid() {
+            Err(windows::core::Error::from_win32())
         } else {
-            (24u8, 24u8, 24u8)
+            CreateIconIndirect(&ICONINFO {
+                fIcon: true.into(),
+                hbmMask: mask,
+                hbmColor: bitmap,
+                ..Default::default()
+            })
         };
-        unsafe {
-            for i in 0..((SIZE * SIZE) as usize) {
-                *p.add(i * 4) = bb;
-                *p.add(i * 4 + 1) = bg;
-                *p.add(i * 4 + 2) = br;
-                *p.add(i * 4 + 3) = 255;
+        let _ = DeleteObject(mask);
+        let _ = DeleteObject(bitmap);
+        result
+    }
+}
+
+#[cfg(test)]
+mod icon_tests {
+    use super::*;
+    #[test]
+    fn transparent_icons_have_smooth_premultiplied_edges_at_all_scales() {
+        for size in [16, 20, 24, 32, 48, 64] {
+            for text in ["A", "あ", "ア", "ー"] {
+                for light in [false, true] {
+                    let pixels = mode_icon_pixels(text, size, light).unwrap();
+                    assert_eq!(pixels.len(), (size * size * 4) as usize);
+                    assert_eq!(pixels[3], 0, "transparent corner: {text} {size}");
+                    assert!(
+                        pixels.chunks_exact(4).any(|p| p[3] == 255),
+                        "visible glyph: {text} {size}"
+                    );
+                    assert!(
+                        pixels.chunks_exact(4).any(|p| p[3] > 0 && p[3] < 255),
+                        "antialiasing: {text} {size}"
+                    );
+                    assert!(
+                        pixels
+                            .chunks_exact(4)
+                            .all(|p| p[0] <= p[3] && p[1] <= p[3] && p[2] <= p[3])
+                    );
+                    if let Some(directory) = std::env::var_os("RAKUKAN_ICON_PREVIEW") {
+                        std::fs::create_dir_all(&directory).unwrap();
+                        std::fs::write(
+                            std::path::PathBuf::from(directory)
+                                .join(format!("{text}-{size}-{light}.bgra")),
+                            &pixels,
+                        )
+                        .unwrap();
+                    }
+                }
             }
         }
-    }
-
-    // フォント
-    let face: Vec<u16> = "Yu Gothic UI"
-        .encode_utf16()
-        .chain(std::iter::once(0))
-        .collect();
-    let hfont: HFONT = unsafe {
-        CreateFontW(
-            -14,
-            0,
-            0,
-            0,
-            800,
-            0,
-            0,
-            0,
-            1,
-            0,
-            0,
-            0,
-            0,
-            windows::core::PCWSTR(face.as_ptr()),
-        )
-    };
-    let old_font = unsafe { SelectObject(hdc, hfont) };
-    unsafe { SetBkMode(hdc, TRANSPARENT) };
-
-    // 文字色
-    let color = if light {
-        0x00_00_00_00u32
-    } else {
-        0x00_FF_FF_FFu32
-    };
-    unsafe { SetTextColor(hdc, windows::Win32::Foundation::COLORREF(color)) };
-
-    let mut rc = windows::Win32::Foundation::RECT {
-        left: 0,
-        top: 0,
-        right: SIZE,
-        bottom: SIZE,
-    };
-    let mut wbuf: Vec<u16> = text.encode_utf16().collect();
-    let _ = unsafe {
-        DrawTextW(
-            hdc,
-            &mut wbuf,
-            &mut rc,
-            DT_CENTER | DT_VCENTER | DT_SINGLELINE,
-        )
-    };
-
-    // alpha 補正
-    if !bits.is_null() {
-        let p = bits as *mut u8;
+        let icon = create_mode_icon("あ").unwrap();
         unsafe {
-            for i in 0..((SIZE * SIZE) as usize) {
-                *p.add(i * 4 + 3) = 255;
-            }
+            windows::Win32::UI::WindowsAndMessaging::DestroyIcon(icon).unwrap();
         }
     }
-
-    // 1bpp マスク
-    let mask_bits = [0u8; (SIZE * SIZE / 8) as usize];
-    let mask: HBITMAP = unsafe {
-        windows::Win32::Graphics::Gdi::CreateBitmap(
-            SIZE,
-            SIZE,
-            1,
-            1,
-            Some(mask_bits.as_ptr() as *const core::ffi::c_void),
-        )
-    };
-    let ii = ICONINFO {
-        fIcon: true.into(),
-        xHotspot: 0,
-        yHotspot: 0,
-        hbmMask: mask,
-        hbmColor: hbmp,
-    };
-    let hicon = unsafe { CreateIconIndirect(&ii)? };
-
-    // GDI クリーンアップ
-    let _ = unsafe { SelectObject(hdc, old_font) };
-    let _ = unsafe { DeleteObject(hfont) };
-    let _ = unsafe { SelectObject(hdc, old) };
-    let _ = unsafe { DeleteDC(hdc) };
-    let _ = unsafe { DeleteObject(mask) };
-    let _ = unsafe { DeleteObject(hbmp) };
-
-    Ok(hicon)
 }
