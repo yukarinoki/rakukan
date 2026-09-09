@@ -1,7 +1,7 @@
 //! AI is an isolated editing session: no app text is changed until acceptance.
 use crate::{
     engine::{state, user_action::UserAction},
-    tsf::{candidate_window, edit_session::EditSession},
+    tsf::{ai_window, candidate_window, edit_session::EditSession},
 };
 use rakukan_romaji::RomajiConverter;
 use serde::Deserialize;
@@ -70,8 +70,8 @@ struct Session {
     rx: Option<mpsc::Receiver<Result<Reply, String>>>,
     cancel: Arc<AtomicBool>,
     message: String,
-    x: i32,
-    y: i32,
+    geometry: Option<ai_window::Geometry>,
+    geometry_checked: std::time::Instant,
     page: usize,
 }
 
@@ -141,6 +141,7 @@ pub(super) fn cancel() {
         s.cancel.store(true, Ordering::Relaxed);
         candidate_window::ai_timer(false);
         candidate_window::hide();
+        ai_window::hide();
     }
 }
 unsafe fn text(range: &ITfRange, ec: u32) -> windows::core::Result<String> {
@@ -197,7 +198,7 @@ pub(super) fn begin(ctx: ITfContext, mgr: ITfThreadMgr, tid: u32) -> windows::co
         if original.trim().is_empty() {
             return Ok(());
         }
-        let position = super::get_caret_pos_from_context(&context, ec);
+        let position = geometry(&context, &range, &original, ec)?;
         *output.borrow_mut() = Some((range, original, composition, position));
         Ok(())
     });
@@ -206,8 +207,11 @@ pub(super) fn begin(ctx: ITfContext, mgr: ITfThreadMgr, tid: u32) -> windows::co
             .and_then(|r| r.ok())
     };
     let captured_target = out.borrow_mut().take();
-    let position = captured_target.as_ref().and_then(|t| t.3);
-    let target = captured_target.map(|(range, text, composition, _)| Target {
+    captured?;
+    let Some((range, text, composition, position)) = captured_target else {
+        return Ok(());
+    };
+    let target = Some(Target {
         ctx,
         mgr,
         range,
@@ -218,7 +222,7 @@ pub(super) fn begin(ctx: ITfContext, mgr: ITfThreadMgr, tid: u32) -> windows::co
     crate::tsf::live_session::conv_gen_bump();
     candidate_window::stop_live_timer();
     candidate_window::stop_waiting_timer();
-    let caret = state::caret_rect_get();
+    candidate_window::hide();
     let mut session = Session {
         target,
         input: RomajiConverter::new(),
@@ -231,20 +235,11 @@ pub(super) fn begin(ctx: ITfContext, mgr: ITfThreadMgr, tid: u32) -> windows::co
         rx: None,
         cancel: Arc::new(AtomicBool::new(false)),
         message: String::new(),
-        x: position.map(|p| p.0).unwrap_or(caret.left),
-        y: position.map(|p| p.1).unwrap_or(caret.bottom),
+        geometry: Some(position),
+        geometry_checked: std::time::Instant::now(),
         page: 0,
     };
-    if session.target.is_some() {
-        start(&mut session)
-    } else {
-        session.message = if captured.is_err() {
-            "この入力欄の文章を取得できません（読取専用・保護された欄・長さ上限を確認）。"
-        } else {
-            "文章を選択するか、文字を入力してからAIキーを押してください。"
-        }
-        .into();
-    }
+    start(&mut session);
     SESSION.with(|s| *s.borrow_mut() = Some(session));
     render();
     candidate_window::ai_timer(true);
@@ -331,7 +326,7 @@ pub(in crate::tsf) fn poll() {
         cancel();
         return;
     }
-    let changed = SESSION.with(|s| {
+    SESSION.with(|s| {
         let mut s = s.borrow_mut();
         let Some(s) = s.as_mut() else { return false };
         let Some(reply) = s.rx.as_ref().and_then(|rx| rx.try_recv().ok()) else {
@@ -360,42 +355,191 @@ pub(in crate::tsf) fn poll() {
         }
         true
     });
-    if changed {
-        render()
-    }
+    refresh_geometry();
+    render();
 }
 fn render() {
     let view = SESSION.with(|s| {
         let s = s.borrow();
         let s = s.as_ref()?;
-        let lines = wrap(s.result.as_ref().map(|r| r.text.as_str()).unwrap_or(""), 24);
-        let pages = lines.len().max(1).div_ceil(5);
         let instruction = format!("{}{}", s.instruction, s.input.full_text());
-        let tail: String = instruction
-            .chars()
-            .rev()
-            .take(24)
-            .collect::<Vec<_>>()
-            .into_iter()
-            .rev()
-            .collect();
-        let mut visible = vec![format!("AI 指示: {tail}")];
-        visible.extend(lines.iter().skip(s.page * 5).take(5).cloned());
-        if visible.len() == 1 {
-            visible.extend(wrap(&s.message, 24).into_iter().take(4));
+        let text = if let Some(result) = &s.result {
+            wrap(&result.text, 24)
+                .into_iter()
+                .skip(s.page * 5)
+                .take(5)
+                .collect::<Vec<_>>()
+                .join("\n")
+        } else if s.rx.is_some() {
+            let chars: Vec<_> = s.last_instruction.chars().collect();
+            chars[chars.len().saturating_sub(120)..].iter().collect()
+        } else {
+            // Keep the input caret visible for long instructions.
+            let chars: Vec<_> = instruction.chars().collect();
+            chars[chars.len().saturating_sub(120)..].iter().collect()
+        };
+        Some(ai_window::View {
+            geometry: s.geometry.clone()?,
+            text,
+            replace: s.result.as_ref().is_some_and(|r| !r.append),
+            busy: s.rx.is_some(),
+            editing: s.rx.is_none() && s.result.is_none(),
+        })
+    });
+    // Native windows and COM may reenter TSF. Never retain a SESSION borrow here.
+    if let Some(view) = view {
+        ai_window::show(view);
+    } else {
+        ai_window::hide();
+    }
+}
+
+unsafe fn geometry(
+    ctx: &ITfContext,
+    range: &ITfRange,
+    original: &str,
+    ec: u32,
+) -> windows::core::Result<ai_window::Geometry> {
+    let view = unsafe { ctx.GetActiveView()? };
+    let viewport = unsafe { view.GetScreenExt()? };
+    let end = unsafe { range.Clone()? };
+    unsafe {
+        end.Collapse(ec, TF_ANCHOR_END)?;
+    }
+    let mut caret = RECT::default();
+    let mut clipped = BOOL(0);
+    unsafe {
+        view.GetTextExt(ec, &end, &mut caret, &mut clipped)?;
+    }
+    if clipped.as_bool() || caret.bottom <= caret.top {
+        return Err(E_FAIL.into());
+    }
+    let mut lines = Vec::new();
+    let units: Vec<i32> = original.chars().map(|c| c.len_utf16() as i32).collect();
+    unsafe {
+        line_rects(
+            &view,
+            range,
+            ec,
+            &units,
+            caret.bottom - caret.top,
+            &mut lines,
+        )?;
+    }
+    if lines.is_empty() {
+        return Err(E_FAIL.into());
+    }
+    Ok(ai_window::Geometry {
+        caret,
+        lines,
+        viewport,
+    })
+}
+
+// Split only multiline ranges, preserving UTF-16 scalar boundaries. A single-line
+// paragraph costs one GetTextExt call instead of one COM call for every character.
+unsafe fn line_rects(
+    view: &ITfContextView,
+    range: &ITfRange,
+    ec: u32,
+    units: &[i32],
+    height: i32,
+    lines: &mut Vec<RECT>,
+) -> windows::core::Result<()> {
+    let mut rect = RECT::default();
+    let mut clipped = BOOL(0);
+    unsafe {
+        view.GetTextExt(ec, range, &mut rect, &mut clipped)?;
+    }
+    if clipped.as_bool() {
+        return Err(E_FAIL.into());
+    }
+    if units.len() <= 1 || rect.bottom - rect.top <= height * 3 / 2 {
+        if rect.right > rect.left && rect.bottom > rect.top {
+            if let Some(last) = lines.last_mut()
+                && last.top == rect.top
+                && last.bottom == rect.bottom
+            {
+                last.left = last.left.min(rect.left);
+                last.right = last.right.max(rect.right);
+            } else {
+                lines.push(rect);
+            }
         }
+        return Ok(());
+    }
+    let mid = units.len() / 2;
+    let left = unsafe { range.Clone()? };
+    let right = unsafe { range.Clone()? };
+    let mut moved = 0;
+    let trim: i32 = units[mid..].iter().sum();
+    unsafe {
+        left.ShiftEnd(ec, -trim, &mut moved, std::ptr::null())?;
+    }
+    if moved != -trim {
+        return Err(E_FAIL.into());
+    }
+    let skip: i32 = units[..mid].iter().sum();
+    unsafe {
+        right.ShiftStart(ec, skip, &mut moved, std::ptr::null())?;
+    }
+    if moved != skip {
+        return Err(E_FAIL.into());
+    }
+    unsafe {
+        line_rects(view, &left, ec, &units[..mid], height, lines)?;
+        line_rects(view, &right, ec, &units[mid..], height, lines)
+    }
+}
+fn refresh_geometry() {
+    let snapshot = SESSION.with(|s| {
+        let mut s = s.borrow_mut();
+        let s = s.as_mut()?;
+        if s.geometry_checked.elapsed() < Duration::from_millis(240) {
+            return None;
+        }
+        s.geometry_checked = std::time::Instant::now();
+        let t = s.target.as_ref()?;
         Some((
-            visible,
-            format!("{}/{} PgUp/PgDn・Esc 取消", s.page + 1, pages),
-            s.x,
-            s.y,
-            s.message.clone(),
+            t.ctx.clone(),
+            t.range.clone(),
+            t.text.clone(),
+            t.composition.clone(),
+            t.tid,
         ))
     });
-    // Never hold an AI RefCell borrow across a native window call (COM reentrancy).
-    if let Some((lines, pager, x, y, status)) = view {
-        candidate_window::show_with_status(&lines, usize::MAX, &pager, x, y, Some(&status));
+    let Some((ctx, range, original, composition, tid)) = snapshot else {
+        return;
+    };
+    let output = Rc::new(RefCell::new(None));
+    let captured = output.clone();
+    let context = ctx.clone();
+    let edit = EditSession::new(move |ec| unsafe {
+        let unchanged = text(&range, ec)? == original
+            && if let Some(comp) = &composition {
+                state::composition_clone()
+                    .ok()
+                    .flatten()
+                    .is_some_and(|c| c.as_raw() == comp.as_raw())
+            } else {
+                let selected = selection(&context, ec)?;
+                selected.CompareStart(ec, &range, TF_ANCHOR_START)? == 0
+                    && selected.CompareEnd(ec, &range, TF_ANCHOR_END)? == 0
+            };
+        *captured.borrow_mut() = Some((unchanged, geometry(&context, &range, &original, ec).ok()));
+        Ok(())
+    });
+    let _ = unsafe { ctx.RequestEditSession(tid, &edit, TF_ES_SYNC | TF_ES_READ) };
+    let captured = output.borrow_mut().take();
+    if captured.as_ref().is_some_and(|(unchanged, _)| !unchanged) {
+        cancel();
+        return;
     }
+    SESSION.with(|s| {
+        if let Some(s) = s.borrow_mut().as_mut() {
+            s.geometry = captured.and_then(|(_, geometry)| geometry);
+        }
+    });
 }
 fn wrap(text: &str, width: usize) -> Vec<String> {
     text.lines()
@@ -514,6 +658,7 @@ fn commit() -> windows::core::Result<()> {
     session.cancel.store(true, Ordering::Relaxed);
     candidate_window::ai_timer(false);
     candidate_window::hide();
+    ai_window::hide();
     let Some(target) = session.target.take() else {
         return Ok(());
     };
@@ -630,8 +775,8 @@ mod tests {
             rx: None,
             cancel: cancel.clone(),
             message: String::new(),
-            x: 0,
-            y: 0,
+            geometry: None,
+            geometry_checked: std::time::Instant::now(),
             page: 2,
         };
         reject(&mut s);
