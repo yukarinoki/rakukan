@@ -84,12 +84,10 @@ enum EnterIntent {
 fn enter_intent(has_instruction: bool, has_result: bool, busy: bool) -> EnterIntent {
     if has_instruction {
         EnterIntent::Generate
-    } else if has_result {
+    } else if has_result && !busy {
         EnterIntent::Accept
-    } else if busy {
-        EnterIntent::Wait
     } else {
-        EnterIntent::Generate
+        EnterIntent::Wait
     }
 }
 thread_local! {
@@ -223,7 +221,7 @@ pub(super) fn begin(ctx: ITfContext, mgr: ITfThreadMgr, tid: u32) -> windows::co
     candidate_window::stop_live_timer();
     candidate_window::stop_waiting_timer();
     candidate_window::hide();
-    let mut session = Session {
+    let session = Session {
         target,
         input: RomajiConverter::new(),
         instruction: String::new(),
@@ -239,7 +237,6 @@ pub(super) fn begin(ctx: ITfContext, mgr: ITfThreadMgr, tid: u32) -> windows::co
         geometry_checked: std::time::Instant::now(),
         page: 0,
     };
-    start(&mut session);
     SESSION.with(|s| *s.borrow_mut() = Some(session));
     render();
     candidate_window::ai_timer(true);
@@ -593,7 +590,7 @@ pub(super) fn key(vk: u16, action: Option<UserAction>) -> windows::core::Result<
                 }
             }
             0x09 => {
-                if s.rx.is_none() {
+                if s.rx.is_none() && (!s.last_instruction.is_empty() || s.result.is_some()) {
                     if let Some(r) = s.result.take() {
                         s.previous = r.text;
                     }
@@ -752,7 +749,7 @@ mod tests {
         assert_eq!(enter_intent(true, true, false), EnterIntent::Generate);
         assert_eq!(enter_intent(true, false, true), EnterIntent::Generate);
         assert_eq!(enter_intent(false, false, true), EnterIntent::Wait);
-        assert_eq!(enter_intent(false, false, false), EnterIntent::Generate);
+        assert_eq!(enter_intent(false, false, false), EnterIntent::Wait);
     }
     #[test]
     fn rejecting_result_preserves_correction_context_and_cancels_old_request() {
