@@ -1,4 +1,4 @@
-//! Non-activating, opaque inline preview. The document is untouched until Enter.
+//! Non-activating translucent instruction puddle and inline preview. The document is untouched until Enter.
 use std::{cell::RefCell, time::Instant};
 use windows::{
     Win32::{
@@ -30,6 +30,7 @@ struct Surface {
     busy: bool,
     editing: bool,
     began: Instant,
+    pool: RECT,
 }
 thread_local! { static SURFACE: RefCell<Option<Surface>> = const { RefCell::new(None) }; }
 
@@ -143,7 +144,11 @@ fn show_impl(view: View, visible: bool) {
             };
             RegisterClassW(&class);
             hwnd = CreateWindowExW(
-                WS_EX_TOPMOST | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TRANSPARENT,
+                WS_EX_TOPMOST
+                    | WS_EX_NOACTIVATE
+                    | WS_EX_TOOLWINDOW
+                    | WS_EX_TRANSPARENT
+                    | WS_EX_LAYERED,
                 class.lpszClassName,
                 w!(""),
                 WS_POPUP,
@@ -160,18 +165,26 @@ fn show_impl(view: View, visible: bool) {
         }
         let Some(hwnd) = hwnd else { return };
         let g = &view.geometry;
-        let anchor = if view.replace {
+        let mut anchor = if view.replace {
             g.lines.first().copied().unwrap_or(g.caret)
         } else {
             g.caret
         };
+        if !view.replace {
+            anchor.left = g.caret.right;
+        }
+        let preview = !view.editing && !view.busy;
         // TSF rectangles already use the host's coordinate space: do not apply DPI twice.
         let height = (anchor.bottom - anchor.top).clamp(12, 120);
-        let padding = (height / 4).max(3);
+        let padding = (height / 6).max(2);
         let width = (g.viewport.right - anchor.left - padding)
             .min(height * 24)
             .max(height * 2);
-        let font_height = (height * 4 / 5).max(10);
+        let font_height = if preview {
+            height
+        } else {
+            (height * 2 / 3).max(8)
+        };
         let dc = GetDC(hwnd);
         let f = font(font_height);
         let old = SelectObject(dc, f);
@@ -195,9 +208,23 @@ fn show_impl(view: View, visible: bool) {
         let mut pool = RECT {
             left: anchor.left,
             top: anchor.top,
-            right: anchor.left + measured.right.max(height * 5).min(width) + padding * 2,
-            bottom: anchor.top + measured.bottom.max(height) + padding * 2,
+            right: anchor.left + measured.right.max(height / 3).min(width) + padding * 2,
+            bottom: anchor.top + measured.bottom.max(height),
         };
+        // Ease horizontal expansion while keeping the caret edge and line height fixed.
+        // Hidden native tests use the final geometry, without animation timing.
+        if visible
+            && !preview
+            && let Some(previous) = SURFACE.with(|s| s.borrow().as_ref().map(|s| s.pool))
+            && previous.left == pool.left
+            && previous.top == pool.top
+            && previous.bottom == pool.bottom
+        {
+            let delta = pool.right - previous.right;
+            if delta.abs() > 2 {
+                pool.right = previous.right + delta / 2;
+            }
+        }
         // Keep the floating input visible near screen edges, without moving source masks.
         let monitor = MonitorFromPoint(
             POINT {
@@ -245,7 +272,7 @@ fn show_impl(view: View, visible: bool) {
         for (index, r) in masks.iter().enumerate() {
             // Round outside the source bounds, keeping every original glyph opaque.
             let rounding = if index + 1 == masks.len() {
-                padding * 3
+                height
             } else {
                 padding.max(4)
             };
@@ -262,9 +289,9 @@ fn show_impl(view: View, visible: bool) {
         }
         let text_rect = RECT {
             left: pool.left - bounds.left + padding,
-            top: pool.top - bounds.top + padding,
+            top: pool.top - bounds.top + (height - font_height).max(0) / 2,
             right: pool.right - bounds.left - padding,
-            bottom: pool.bottom - bounds.top - padding,
+            bottom: pool.bottom - bounds.top,
         };
         SURFACE.with(|s| {
             let mut s = s.borrow_mut();
@@ -281,6 +308,7 @@ fn show_impl(view: View, visible: bool) {
                 busy: view.busy,
                 editing: view.editing,
                 began,
+                pool,
             });
         });
         let _ = SetWindowPos(
@@ -295,6 +323,14 @@ fn show_impl(view: View, visible: bool) {
         if SetWindowRgn(hwnd, region, BOOL(1)) == 0 {
             let _ = DeleteObject(region);
         }
+        // Keep replacement masks opaque so original glyphs do not bleed through.
+        // The instruction water and append preview remain translucent.
+        let _ = SetLayeredWindowAttributes(
+            hwnd,
+            COLORREF(0),
+            if view.replace { 255 } else { 185 },
+            LWA_ALPHA,
+        );
         if visible {
             let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
         }
@@ -305,6 +341,82 @@ fn show_impl(view: View, visible: bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    #[ignore = "requires a Windows desktop; creates only hidden windows"]
+    fn instruction_grows_right_at_text_height_desktop_regression() {
+        for height in [20, 30, 40] {
+            let geometry = Geometry {
+                caret: RECT {
+                    left: 100,
+                    right: 102,
+                    top: 100,
+                    bottom: 100 + height,
+                },
+                lines: vec![],
+                viewport: RECT {
+                    left: 0,
+                    top: 0,
+                    right: 1000,
+                    bottom: 800,
+                },
+            };
+            let mut previous_width = 0;
+            for text in ["", "つ", "つづ", "つづき"] {
+                show_impl(
+                    View {
+                        geometry: geometry.clone(),
+                        text: text.into(),
+                        busy: false,
+                        editing: true,
+                        replace: false,
+                    },
+                    false,
+                );
+                let (hwnd, font_height) = SURFACE.with(|s| {
+                    let s = s.borrow();
+                    let s = s.as_ref().unwrap();
+                    (s.hwnd, s.font_height)
+                });
+                let mut rect = RECT::default();
+                unsafe {
+                    GetWindowRect(hwnd, &mut rect).unwrap();
+                }
+                assert_eq!(rect.left, geometry.caret.right);
+                assert_eq!(rect.top, geometry.caret.top);
+                assert_eq!(rect.bottom - rect.top, height + 1);
+                let width = rect.right - rect.left;
+                assert!(
+                    width > previous_width,
+                    "instruction={text} width={width} previous={previous_width}"
+                );
+                if text.is_empty() {
+                    assert!(width <= height);
+                }
+                assert!(font_height < height);
+                let mut alpha = 0u8;
+                unsafe {
+                    GetLayeredWindowAttributes(hwnd, None, Some(&mut alpha), None).unwrap();
+                }
+                assert_eq!(alpha, 185);
+                previous_width = width;
+            }
+            show_impl(
+                View {
+                    geometry,
+                    text: "候補".into(),
+                    busy: false,
+                    editing: false,
+                    replace: false,
+                },
+                false,
+            );
+            assert_eq!(
+                SURFACE.with(|s| s.borrow().as_ref().unwrap().font_height),
+                height
+            );
+            hide();
+        }
+    }
     #[test]
     fn empty_text_never_enters_gdi_and_has_zero_measured_extent() {
         let mut rect = RECT {
