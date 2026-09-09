@@ -628,7 +628,7 @@
                 <ScrollViewer x:Name="AiPage" Visibility="Collapsed">
                     <StackPanel Style="{StaticResource SettingsPageLayout}">
                         <TextBlock Style="{StaticResource SettingsPageTitle}" Text="AIモード" />
-                        <ToggleSwitch x:Name="AiEnabled" Header="AIモードを使う" />
+                        <ToggleSwitch x:Name="AiEnabled" Header="AIモードを使う（すぐに反映）" Toggled="AiEnabled_Toggled" />
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <ToggleButton x:Name="AiConnectionTab" Content="接続" Tag="connection" IsChecked="True" Click="AiSection_Click" />
                             <ToggleButton x:Name="AiCommandsTab" Content="コマンド" Tag="commands" Click="AiSection_Click" />
