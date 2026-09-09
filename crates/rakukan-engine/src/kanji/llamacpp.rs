@@ -7,6 +7,7 @@
 
 use super::error::KanjiError;
 type Result<T> = super::error::Result<T>;
+use llama_cpp_2::context::LlamaContext;
 use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::llama_backend::LlamaBackend;
 use llama_cpp_2::llama_batch::LlamaBatch;
@@ -90,6 +91,20 @@ fn non_byte_special_token_ids(tokenizer: &tokenizers::Tokenizer) -> HashSet<u32>
 struct BeamState {
     tokens: Vec<LlamaToken>,
     score: f32,
+    // For active beams, KV contains the prompt and all but the last token.
+    seq_id: i32,
+}
+
+fn clear_beam_sequence(ctx: &mut LlamaContext<'_>, seq_id: i32) -> Result<()> {
+    let cleared = ctx
+        .clear_kv_cache_seq(Some(seq_id as u32), None, None)
+        .map_err(|e| KanjiError::Inference(e.into()))?;
+    if !cleared {
+        return Err(KanjiError::Inference(
+            "failed to clear beam KV sequence".into(),
+        ));
+    }
+    Ok(())
 }
 
 /// llama.cpp based GPT-2 model for GGUF inference
@@ -539,15 +554,15 @@ impl LlamaCppModel {
     ///    - Keep only the best beam_size candidates globally
     /// 3. Repeat until all beams reach EOS or max_new_tokens
     ///
-    /// True beam search implementation without KV cache sharing.
+    /// Prefill once, then decode only the pending token of each active beam.
     ///
-    /// beam の選択で同一親から複数の子が残るため KV cache の seq 分岐が必要に
-    /// なるが、seq コピー共有は過去に GPT-2 モデルで問題が出たため使わない。
-    /// 代わりに 1 コンテキストを維持し、毎ステップ `clear_kv_cache` してから
-    /// 全 beam のフル系列を **1 回の batched decode** で評価する。
-    /// （旧実装は beam × step ごとに fresh context を生成してフル再デコード
-    /// しており、context 生成 = KV 確保が beam_size × max_new_tokens 回走って
-    /// 長文 × 大 beam で分単位の遅延 =「変換が止まる」体感の主因だった。）
+    /// Use two disjoint banks of sequence IDs. Copy every selected parent's KV
+    /// to the other bank before removing any parent, including when siblings
+    /// survive or sorting changes beam order. Reusing IDs in place can overwrite
+    /// a parent that another child still needs.
+    ///
+    /// Incremental and full-prefix evaluation may differ numerically, so close
+    /// candidate scores need not retain exactly the same ordering.
     fn generate_beam_search_impl(
         &self,
         input_tokens: &[LlamaToken],
@@ -555,20 +570,44 @@ impl LlamaCppModel {
         eos_token_id: Option<i32>,
         beam_size: usize,
     ) -> Result<Vec<(Vec<LlamaToken>, f32)>> {
+        if max_new_tokens == 0 || beam_size == 0 {
+            return Ok(Vec::new());
+        }
+        if input_tokens.is_empty() {
+            return Err(KanjiError::Inference(
+                "beam search requires a nonempty prompt".into(),
+            ));
+        }
         let backend = get_backend()?;
         let model_eos = self.model.token_eos();
         let input_len = input_tokens.len();
 
-        // n_ctx / n_batch は「全 beam のフル系列を 1 decode に載せる」ぶんが必要。
-        let max_seq_len = input_len.saturating_add(max_new_tokens).saturating_add(1);
-        let batch_size = max_seq_len.saturating_mul(beam_size).min(u32::MAX as usize) as u32;
-        let n_ctx_needed = batch_size.max(self.n_ctx);
+        // Reserve two beam banks and one temporary prefill sequence. Round the
+        // sequence capacity up for llama.cpp, with room for each full sequence.
+        let seq_capacity = beam_size
+            .checked_mul(2)
+            .and_then(|n| n.checked_add(1))
+            .and_then(usize::checked_next_power_of_two)
+            .filter(|&n| n <= i32::MAX as usize)
+            .ok_or_else(|| KanjiError::Inference("beam sequence capacity overflow".into()))?;
+        let max_seq_len = input_len
+            .checked_add(max_new_tokens)
+            .and_then(|n| n.checked_add(1))
+            .filter(|&n| n <= i32::MAX as usize)
+            .ok_or_else(|| KanjiError::Inference("beam sequence length overflow".into()))?;
+        let n_ctx_needed = max_seq_len
+            .checked_mul(seq_capacity)
+            .and_then(|n| u32::try_from(n).ok())
+            .ok_or_else(|| KanjiError::Inference("beam KV capacity overflow".into()))?
+            .max(self.n_ctx);
+        let batch_size = input_len.max(beam_size) as u32;
+        let prompt_seq = (2 * beam_size) as i32;
         let ctx_params = self
             .context_params()
             .with_n_ctx(Some(
                 NonZeroU32::new(n_ctx_needed).expect("n_ctx must be non-zero"),
             ))
-            .with_n_seq_max(beam_size.try_into().unwrap_or(32))
+            .with_n_seq_max(seq_capacity as u32)
             .with_n_batch(batch_size)
             .with_n_ubatch(batch_size);
         let mut ctx = self
@@ -577,11 +616,11 @@ impl LlamaCppModel {
             .map_err(|e| KanjiError::Inference(e.into()))?;
         let mut batch = LlamaBatch::new(batch_size as usize, 1);
 
-        // Step 1: Get initial logits (input を seq 0 で 1 回だけ評価)
+        // Step 1: Prefill the prompt once in a temporary sequence.
         for (i, token) in input_tokens.iter().enumerate() {
             let is_last = i == input_len - 1;
             batch
-                .add(*token, i as i32, &[0], is_last)
+                .add(*token, i as i32, &[prompt_seq], is_last)
                 .map_err(|e| KanjiError::Inference(e.into()))?;
         }
         ctx.decode(&mut batch)
@@ -597,14 +636,20 @@ impl LlamaCppModel {
             let beam = BeamState {
                 tokens: vec![token],
                 score: log_prob,
+                seq_id: beams.len() as i32,
             };
 
             if self.is_eos_token(token, eos_token_id, model_eos) {
                 finished_beams.push(beam);
             } else {
+                ctx.copy_kv_cache_seq(prompt_seq, beam.seq_id, None, None)
+                    .map_err(|e| KanjiError::Inference(e.into()))?;
                 beams.push(beam);
             }
         }
+
+        clear_beam_sequence(&mut ctx, prompt_seq)?;
+        let mut bank = 0usize;
 
         // Expansion factor
         let expand_k = beam_size.max(4);
@@ -646,29 +691,18 @@ impl LlamaCppModel {
                 break 'step;
             }
 
-            // 全 beam のフル系列（input + beam.tokens）を別 seq に載せ、
-            // 1 回の decode で各 beam の最終トークン位置の logits を得る
-            ctx.clear_kv_cache();
             batch.clear();
-            let mut last_logit_idx: Vec<i32> = Vec::with_capacity(beams.len());
-            let mut n_added: i32 = 0;
-            for (beam_idx, beam) in beams.iter().enumerate() {
-                let seq = beam_idx as i32;
-                for (i, token) in input_tokens.iter().enumerate() {
-                    batch
-                        .add(*token, i as i32, &[seq], false)
-                        .map_err(|e| KanjiError::Inference(e.into()))?;
-                    n_added += 1;
-                }
-                for (j, token) in beam.tokens.iter().enumerate() {
-                    let pos = (input_len + j) as i32;
-                    let is_last = j == beam.tokens.len() - 1;
-                    batch
-                        .add(*token, pos, &[seq], is_last)
-                        .map_err(|e| KanjiError::Inference(e.into()))?;
-                    n_added += 1;
-                }
-                last_logit_idx.push(n_added - 1);
+            for beam in &beams {
+                let pos = input_len + beam.tokens.len() - 1;
+                debug_assert_eq!(ctx.kv_cache_seq_pos_max(beam.seq_id), pos as i32 - 1);
+                batch
+                    .add(
+                        *beam.tokens.last().expect("active beam has a token"),
+                        pos as i32,
+                        &[beam.seq_id],
+                        true,
+                    )
+                    .map_err(|e| KanjiError::Inference(e.into()))?;
             }
             ctx.decode(&mut batch)
                 .map_err(|e| KanjiError::Inference(e.into()))?;
@@ -677,7 +711,7 @@ impl LlamaCppModel {
             let mut candidates: Vec<BeamState> = Vec::new();
 
             for (beam_idx, beam) in beams.iter().enumerate() {
-                let logits = ctx.get_logits_ith(last_logit_idx[beam_idx]);
+                let logits = ctx.get_logits_ith(beam_idx as i32);
                 let (top_tokens, top_log_probs) = self.get_top_k_tokens(logits, expand_k);
 
                 // Create candidates
@@ -688,6 +722,7 @@ impl LlamaCppModel {
                     candidates.push(BeamState {
                         tokens: new_tokens,
                         score: beam.score + log_prob,
+                        seq_id: beam.seq_id,
                     });
                 }
             }
@@ -696,9 +731,14 @@ impl LlamaCppModel {
             candidates.sort_by(|a, b| b.score.total_cmp(&a.score));
             candidates.truncate(beam_size);
 
-            // Partition into finished and active beams
+            // Clear destinations first; all source sequences remain live until
+            // every surviving child has inherited its parent's evaluated prefix.
+            let next_bank = 1 - bank;
+            for i in 0..beam_size {
+                clear_beam_sequence(&mut ctx, (next_bank * beam_size + i) as i32)?;
+            }
             beams.clear();
-            for candidate in candidates {
+            for mut candidate in candidates {
                 let last_token = match candidate.tokens.last() {
                     Some(&t) => t,
                     None => continue,
@@ -707,9 +747,17 @@ impl LlamaCppModel {
                 if self.is_eos_token(last_token, eos_token_id, model_eos) {
                     finished_beams.push(candidate);
                 } else {
+                    let target = (next_bank * beam_size + beams.len()) as i32;
+                    ctx.copy_kv_cache_seq(candidate.seq_id, target, None, None)
+                        .map_err(|e| KanjiError::Inference(e.into()))?;
+                    candidate.seq_id = target;
                     beams.push(candidate);
                 }
             }
+            for i in 0..beam_size {
+                clear_beam_sequence(&mut ctx, (bank * beam_size + i) as i32)?;
+            }
+            bank = next_bank;
         }
 
         // EOS に到達した beam だけを候補にする。未完了 beam は文の途中で
@@ -966,6 +1014,97 @@ impl<'a> NllScorer<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Run with the jinen-v1-xsmall Q5_K_M model and its tokenizer; no downloads.
+    #[test]
+    #[ignore = "requires RAKUKAN_TEST_MODEL and RAKUKAN_TEST_TOKENIZER (jinen-v1-xsmall Q5_K_M)"]
+    fn beam_cache_jinen_regression() {
+        let mut model = LlamaCppModel::from_file(
+            std::env::var("RAKUKAN_TEST_MODEL").expect("model path"),
+            std::env::var("RAKUKAN_TEST_TOKENIZER").expect("tokenizer path"),
+        )
+        .expect("load test model");
+        model.set_n_threads(4);
+        let eos = model.eos_token_id();
+        let prompt = |reading| {
+            model
+                .tokenize(&super::super::build_jinen_prompt(reading, ""))
+                .unwrap()
+        };
+        let input = prompt("ヘンカンソクドノ");
+        assert!(
+            model
+                .generate_beam_search(&input, 0, Some(eos.0), 6)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(
+            model
+                .generate_beam_search(&input, 24, Some(eos.0), 0)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(model.generate_beam_search(&[], 24, Some(eos.0), 6).is_err());
+        assert!(
+            model
+                .generate_beam_search(&input, 24, Some(eos.0), usize::MAX)
+                .is_err()
+        );
+        assert!(
+            model
+                .generate_beam_search(&input, usize::MAX, Some(eos.0), 6)
+                .is_err()
+        );
+        // A budget exhausted before EOS must not return unfinished text.
+        assert!(
+            model
+                .generate_beam_search(&input, 1, Some(eos.0), 6)
+                .unwrap()
+                .is_empty()
+        );
+        let first = model
+            .generate_beam_search(&input, 24, Some(eos.0), 6)
+            .unwrap();
+        for width in [1, 3, 6] {
+            for (reading, expected) in [
+                ("ヘンカンソクドノ", "変換速度の"),
+                ("キョウハイイテンキデスネ", "今日はいい天気ですね"),
+                ("ハシヲワタル", "橋を渡る"),
+            ] {
+                let results = model
+                    .generate_beam_search(&prompt(reading), 40, Some(eos.0), width)
+                    .unwrap();
+                assert!(!results.is_empty());
+                assert!(results.len() <= width);
+                assert_eq!(model.decode(&results[0].0, true).unwrap(), expected);
+                assert!(results.windows(2).all(|pair| pair[0].1 >= pair[1].1));
+                for (tokens, score) in &results {
+                    assert!(score.is_finite());
+                    assert!(tokens.len() <= 40);
+                    assert!(model.is_eos_token(*tokens.last().unwrap(), Some(eos.0), eos));
+                    assert!(
+                        tokens[..tokens.len() - 1]
+                            .iter()
+                            .all(|&t| !model.is_eos_token(t, Some(eos.0), eos))
+                    );
+                }
+            }
+        }
+        // Different intervening requests must not leave another beam's KV behind.
+        assert_eq!(
+            first,
+            model
+                .generate_beam_search(&input, 24, Some(eos.0), 6)
+                .unwrap()
+        );
+        // Explicit EOS is still honored on the very first selected token.
+        let stop = first[0].0[0].0;
+        let stopped = model
+            .generate_beam_search(&input, 1, Some(stop), 1)
+            .unwrap();
+        assert_eq!(stopped.len(), 1);
+        assert_eq!(stopped[0].0, vec![LlamaToken(stop)]);
+    }
 
     #[test]
     fn test_is_byte_fallback_token() {
