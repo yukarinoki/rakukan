@@ -91,6 +91,7 @@ mod edit_ops;
 mod on_compose;
 mod on_convert;
 mod on_input;
+mod reconversion;
 use on_compose::{
     commit_text, commit_then_start_composition, end_composition, get_caret_pos_from_context,
     update_caret_rect, update_composition, update_composition_candidate_parts,
@@ -569,6 +570,7 @@ impl ITfTextInputProcessor_Impl for TextServiceFactory_Impl {
     }
 
     fn Deactivate(&self) -> windows::core::Result<()> {
+        reconversion::clear();
         tray_ipc::clear();
         diag::event(DiagEvent::Deactivate);
         let inner = self
@@ -639,6 +641,7 @@ impl ITfCompositionSink_Impl for TextServiceFactory_Impl {
         _: u32,
         _: Option<&ITfComposition>,
     ) -> windows::core::Result<()> {
+        reconversion::clear();
         let _ = composition_set(None);
         // 候補ウィンドウと選択状態をクリア
         candidate_window::hide();
@@ -673,11 +676,21 @@ impl ITfKeyEventSink_Impl for TextServiceFactory_Impl {
 
     fn OnTestKeyDown(
         &self,
-        _: Option<&ITfContext>,
+        pic: Option<&ITfContext>,
         wparam: WPARAM,
         _: LPARAM,
     ) -> windows::core::Result<BOOL> {
         let vk = normalize_key_event_vk(wparam.0 as u16);
+        if reconversion::shortcut(vk) && crate::engine::state::ime_mode_get_atomic().is_on() {
+            let tid = self.inner.try_borrow().map(|g| g.client_id).unwrap_or(0);
+            if pic
+                .and_then(|ctx| reconversion::selected(ctx, tid))
+                .is_some()
+            {
+                return Ok(TRUE);
+            }
+        }
+
         let action = match self
             .inner
             .try_borrow()
@@ -736,6 +749,29 @@ impl ITfKeyEventSink_Impl for TextServiceFactory_Impl {
         }
         let _t = diag::span("OnKeyDown");
         let vk = normalize_key_event_vk(wparam.0 as u16);
+        if crate::engine::state::ime_mode_get_atomic().is_on() {
+            if let Some(ctx) = pic {
+                let tid = self.inner.try_borrow().map(|g| g.client_id).unwrap_or(0);
+                if reconversion::shortcut(vk) {
+                    if let Some((range, text)) = reconversion::selected(ctx, tid) {
+                        let sink: ITfCompositionSink = unsafe { self.cast() }?;
+                        let thread_mgr = self
+                            .inner
+                            .try_borrow()
+                            .ok()
+                            .and_then(|g| g.thread_mgr.clone())
+                            .ok_or_else(|| windows::core::Error::from(E_FAIL))?;
+                        reconversion::begin(thread_mgr, ctx.clone(), tid, sink, range, text)?;
+                        return Ok(TRUE);
+                    }
+                }
+                if (vk == 0x1b || (vk == 0x08 && unsafe { GetKeyState(0x11) as u16 & 0x8000 != 0 }))
+                    && reconversion::cancel(ctx.clone(), tid).unwrap_or(false)
+                {
+                    return Ok(TRUE);
+                }
+            }
+        }
 
         tracing::trace!("OnKeyDown vk={:#04x}", vk);
 

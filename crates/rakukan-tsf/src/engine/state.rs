@@ -781,7 +781,7 @@ pub fn is_candidate_learning_target(source: CandidateViewSource) -> bool {
     use CandidateViewSource::*;
     match source {
         Bg | Dict | LivePreview => true,
-        Preedit | Fallback => false,
+        Preedit | Fallback | Reconversion => false,
     }
 }
 
@@ -1099,6 +1099,7 @@ pub struct CandidateView {
 #[allow(dead_code)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CandidateViewSource {
+    Reconversion,
     Preedit,
     LivePreview,
     Dict,
@@ -1109,6 +1110,7 @@ pub enum CandidateViewSource {
 impl CandidateViewSource {
     pub fn as_str(self) -> &'static str {
         match self {
+            CandidateViewSource::Reconversion => "reconversion",
             CandidateViewSource::Preedit => "preedit",
             CandidateViewSource::LivePreview => "live_preview",
             CandidateViewSource::Dict => "dict",
@@ -1963,6 +1965,24 @@ impl SessionState {
             ..
         } = self
         {
+            // A late LLM result must not change the text selected for reconversion.
+            // Keep every displayed candidate at its index and only append new choices.
+            if candidate_views
+                .iter()
+                .any(|view| view.source == CandidateViewSource::Reconversion)
+            {
+                for text in new_candidates {
+                    if !candidates.contains(&text) {
+                        candidates.push(text.clone());
+                        candidate_views.push(CandidateView::compatible(
+                            text,
+                            original_preedit.chars().count(),
+                            CandidateViewSource::Reconversion,
+                        ));
+                    }
+                }
+                return;
+            }
             let reading_len = original_preedit.chars().count();
             *candidate_views =
                 candidate_views_from_strings(&new_candidates, reading_len, remainder, source);
@@ -2578,6 +2598,19 @@ mod tests {
         };
         live.sync_preedit_reading("あいう");
         assert!(matches!(&live, SessionState::LiveConv { reading, .. } if reading == "よみ"));
+    }
+
+    #[test]
+    fn reconversion_late_candidates_keep_original_and_current_choice() {
+        let mut state = SessionState::Idle;
+        state.activate_selecting(vec!["橋".into(), "箸".into()], "はし".into(), 0, 0, true);
+        state.rebuild_selecting_candidate_views(CandidateViewSource::Reconversion);
+        state.next_with_page_wrap();
+        state.replace_selecting_candidates(vec!["端".into(), "橋".into()], CandidateViewSource::Bg);
+        assert_eq!(state.current_candidate(), Some("箸"));
+        assert_eq!(state.page_candidates(), ["橋", "箸", "端"]);
+        state.replace_selecting_candidates(vec!["波斯".into()], CandidateViewSource::Bg);
+        assert_eq!(state.current_candidate(), Some("箸"));
     }
 
     #[test]

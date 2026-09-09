@@ -373,6 +373,11 @@ impl RpcEngine {
     ///
     /// 旧 `merge_candidates()`（ホスト内部の hiragana_buf を参照）は Issue #9 で削除した。
     /// 呼び出し側は「実際に候補が取れたキー」を必ず渡すこと。
+    pub fn reverse_readings(&self, text: &str) -> Vec<String> {
+        self.call_strings(Request::ReverseReading { text: text.into() })
+            .unwrap_or_default()
+    }
+
     pub fn merge_candidates_for_reading(
         &self,
         reading: &str,

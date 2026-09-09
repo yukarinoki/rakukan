@@ -129,6 +129,8 @@ struct EngineVTable {
     merge_candidates_for_reading:
         unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char, u32) -> *mut c_char,
 
+    reverse_readings: Option<unsafe extern "C" fn(*mut c_void, *const c_char) -> *mut c_char>,
+
     // 非同期初期化
     start_load_model: unsafe extern "C" fn(*mut c_void),
     poll_model_ready: unsafe extern "C" fn(*mut c_void) -> bool,
@@ -223,6 +225,11 @@ impl EngineVTable {
             convert_sync: load_sym!(lib, b"engine_convert_sync\0"),
             merge_candidates: load_sym!(lib, b"engine_merge_candidates\0"),
             merge_candidates_for_reading: load_sym!(lib, b"engine_merge_candidates_for_reading\0"),
+            reverse_readings: unsafe {
+                lib.get(b"engine_reverse_readings\0")
+                    .ok()
+                    .map(|symbol| *symbol)
+            },
             start_load_model: load_sym!(lib, b"engine_start_load_model\0"),
             poll_model_ready: load_sym!(lib, b"engine_poll_model_ready\0"),
             start_load_dict: load_sym!(lib, b"engine_start_load_dict\0"),
@@ -548,6 +555,18 @@ impl DynEngine {
                 Some(json) => serde_json::from_str(&json).unwrap_or_default(),
                 None => vec![],
             }
+        }
+    }
+
+    pub fn reverse_readings(&self, text: &str) -> Vec<String> {
+        let Some(function) = self.vtable.reverse_readings else {
+            return Vec::new();
+        };
+        let text = Self::to_cstring(text);
+        unsafe {
+            self.take_cstr(function(self.handle, text.as_ptr()))
+                .and_then(|json| serde_json::from_str(&json).ok())
+                .unwrap_or_default()
         }
     }
 

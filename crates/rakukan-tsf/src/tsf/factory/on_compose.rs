@@ -753,6 +753,7 @@ pub(super) fn end_composition(ctx: ITfContext, tid: u32, text: String) -> Result
             );
             windows::core::Error::new(E_FAIL, format!("EndComposition: {e}"))
         })?;
+        super::reconversion::clear();
         Ok(())
     });
     // 確定はユーザーテキストを失うと致命的なので、edit session の結果

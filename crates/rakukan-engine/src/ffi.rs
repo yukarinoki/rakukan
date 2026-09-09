@@ -821,3 +821,15 @@ mod build_info_tests {
         );
     }
 }
+
+/// Optional ABI extension. JSON array of possible readings; empty means unavailable.
+#[unsafe(no_mangle)]
+pub extern "C" fn engine_reverse_readings(handle: *mut c_void, text: *const c_char) -> *mut c_char {
+    let engine = unsafe { &*(handle as *const RakunEngine) };
+    let text = unsafe { from_cstr(text) };
+    let reading = engine
+        .dict_store_ref()
+        .map(|d| d.reverse_readings(text))
+        .unwrap_or_default();
+    unsafe { to_cstr(serde_json::to_string(&reading).unwrap_or_else(|_| "[]".into())) }
+}

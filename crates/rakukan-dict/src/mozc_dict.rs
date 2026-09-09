@@ -138,6 +138,40 @@ impl MozcDict {
         results
     }
 
+    /// Collect only dictionary tokens occurring in a bounded reconversion request.
+    /// No reverse index is allocated in every application process.
+    pub fn reverse_tokens(&self, text: &str) -> Vec<(String, String, u16)> {
+        let mut out = Vec::new();
+        for i in 0..self.n_readings as usize {
+            let Some(reading) = self.reading_at(i) else {
+                continue;
+            };
+            let (start, count) = self.index_entry(i);
+            for j in 0..count as usize {
+                let off = self.entries_off + (start as usize + j) * ENTRY_RECORD_SIZE;
+                if off + ENTRY_RECORD_SIZE > self.surface_heap_off {
+                    break;
+                }
+                let begin = self.surface_heap_off + u32_le(&self.mmap, off) as usize;
+                let end = begin + u16_le(&self.mmap, off + 4) as usize;
+                let Some(bytes) = self.mmap.get(begin..end) else {
+                    continue;
+                };
+                let Ok(surface) = std::str::from_utf8(bytes) else {
+                    continue;
+                };
+                if !surface.is_empty() && text.contains(surface) {
+                    out.push((
+                        surface.to_owned(),
+                        reading.to_owned(),
+                        u16_le(&self.mmap, off + 6),
+                    ));
+                }
+            }
+        }
+        out
+    }
+
     /// ユニーク読み数
     pub fn n_readings(&self) -> usize {
         self.n_readings as usize
@@ -228,6 +262,20 @@ fn u16_le(buf: &[u8], off: usize) -> u16 {
 mod tests {
     use super::*;
     use std::io::Write;
+
+    #[test]
+    fn reverse_tokens_match_surface_not_reading() {
+        let data = build_test_dict(&[
+            ("はし", "橋", 10),
+            ("はし", "箸", 20),
+            ("にほん", "日本", 30),
+        ]);
+        let dict = open_test(&data);
+        let tokens = dict.reverse_tokens("日本の橋");
+        assert_eq!(tokens.len(), 2);
+        assert!(tokens.contains(&("橋".into(), "はし".into(), 10)));
+        assert!(dict.reverse_tokens("はし").is_empty());
+    }
 
     /// テスト用のミニ rakukan.dict をメモリ上で作る
     fn build_test_dict(entries: &[(&str, &str, u16)]) -> Vec<u8> {

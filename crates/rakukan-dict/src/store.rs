@@ -200,6 +200,72 @@ struct LearnHistoryFileRef<'a> {
 }
 
 impl DictStore {
+    /// Keep alternative readings: dictionary costs alone favor suffixes such as ばし.
+    pub fn reverse_readings(&self, text: &str) -> Vec<String> {
+        if text.is_empty() || text.chars().count() > 128 || text.chars().any(char::is_control) {
+            return Vec::new();
+        }
+        self.reload_user_if_changed();
+        let mut out = Vec::new();
+        let mut tokens = Vec::new();
+        if let Ok(user) = self.inner.user.read() {
+            let mut exact: Vec<_> = user
+                .iter()
+                .filter(|(_, surfaces)| surfaces.iter().any(|s| s == text))
+                .map(|(r, _)| r.clone())
+                .collect();
+            exact.sort();
+            out.extend(exact);
+            for (reading, surfaces) in user.iter() {
+                for surface in surfaces {
+                    if !surface.is_empty() && text.contains(surface) {
+                        tokens.push((surface.clone(), reading.clone(), 0));
+                    }
+                }
+            }
+        }
+        if let Ok(history) = self.inner.learn_history.read() {
+            let mut exact: Vec<_> = history
+                .iter()
+                .flat_map(|(r, entries)| {
+                    entries
+                        .iter()
+                        .filter(move |e| e.surface == text)
+                        .map(move |e| (e.last_access_time, r.clone()))
+                })
+                .collect();
+            exact.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
+            for (_, r) in exact {
+                if !out.contains(&r) {
+                    out.push(r);
+                }
+            }
+        }
+        if let Some(reading) = reverse_with_tokens(text, &[]) {
+            if !out.contains(&reading) {
+                out.push(reading);
+            }
+            return out;
+        }
+        if let Some(dict) = &self.inner.mozc {
+            tokens.extend(dict.reverse_tokens(text));
+        }
+        let mut exact: Vec<_> = tokens.iter().filter(|(s, _, _)| s == text).collect();
+        exact.sort_by(|a, b| a.2.cmp(&b.2).then(a.1.cmp(&b.1)));
+        for (_, r, _) in exact {
+            if !out.contains(r) {
+                out.push(r.clone());
+            }
+        }
+        if out.is_empty() {
+            if let Some(reading) = reverse_with_tokens(text, &tokens) {
+                out.push(reading);
+            }
+        }
+        out.truncate(16);
+        out
+    }
+
     /// 各辞書を読み込んで DictStore を構築する
     ///
     /// - `user_path`: 手動登録ユーザー辞書 (`user_dict.toml`)
@@ -1635,5 +1701,65 @@ mod tests {
         assert!(!removed);
         let removed = store.forget("そんざいしない", "X");
         assert!(!removed);
+    }
+}
+
+/// Minimum-cost tokenization of a surface, preserving kana and punctuation.
+fn reverse_with_tokens(text: &str, tokens: &[(String, String, u16)]) -> Option<String> {
+    let mut paths: Vec<Option<(u64, String)>> = vec![None; text.len() + 1];
+    paths[0] = Some((0, String::new()));
+    for (i, ch) in text.char_indices() {
+        let Some((cost, prefix)) = paths[i].clone() else {
+            continue;
+        };
+        let mut advance = |end: usize, reading: &str, extra: u64| {
+            let next = cost + extra;
+            let value = format!("{prefix}{reading}");
+            if paths[end]
+                .as_ref()
+                .is_none_or(|(old, s)| next < *old || (next == *old && value < *s))
+            {
+                paths[end] = Some((next, value));
+            }
+        };
+        if ch.is_ascii()
+            || ('\u{3041}'..='\u{3096}').contains(&ch)
+            || ('\u{30a1}'..='\u{30f6}').contains(&ch)
+            || "ー、。！？・（）「」『』　".contains(ch)
+        {
+            let kana = if ('\u{30a1}'..='\u{30f6}').contains(&ch) {
+                char::from_u32(ch as u32 - 0x60).unwrap()
+            } else {
+                ch
+            };
+            advance(i + ch.len_utf8(), &kana.to_string(), 100);
+        }
+        for (surface, reading, token_cost) in tokens {
+            if !surface.is_empty() && text[i..].starts_with(surface) {
+                advance(i + surface.len(), reading, 10000 + u64::from(*token_cost));
+            }
+        }
+    }
+    paths[text.len()].take().map(|(_, s)| s)
+}
+
+#[cfg(test)]
+mod reverse_tests {
+    use super::*;
+    #[test]
+    fn recovers_words_kana_and_preserves_unknown_failure() {
+        let tokens = vec![
+            ("橋".into(), "はし".into(), 100),
+            ("日本".into(), "にほん".into(), 100),
+        ];
+        assert_eq!(
+            reverse_with_tokens("日本の橋", &tokens).as_deref(),
+            Some("にほんのはし")
+        );
+        assert_eq!(
+            reverse_with_tokens("カタカナ", &tokens).as_deref(),
+            Some("かたかな")
+        );
+        assert_eq!(reverse_with_tokens("未知", &tokens), None);
     }
 }

@@ -30,6 +30,7 @@ pub use romaji::{BackspaceResult, ConversionEvent, RomajiConverter};
 // ── rakukan 独自モジュール ────────────────────────────────────────────────────
 pub mod backend;
 pub mod conv_cache;
+pub mod date_candidates;
 pub mod dict;
 pub mod digits;
 pub mod ffi;
@@ -712,6 +713,9 @@ impl RakunEngine {
     /// 確定した候補をユーザー辞書に学習して保存する
     /// 学習語を DictStore に即時反映してファイルにも保存する。
     pub fn learn(&mut self, reading: &str, surface: &str) {
+        if date_candidates::is_dynamic(reading, surface) {
+            return;
+        }
         if let Some(store) = &self.dict_store {
             store.learn(reading, surface);
         } else {
@@ -720,6 +724,9 @@ impl RakunEngine {
     }
 
     pub fn learn_force(&mut self, reading: &str, surface: &str) {
+        if date_candidates::is_dynamic(reading, surface) {
+            return;
+        }
         if let Some(store) = &self.dict_store {
             store.learn_force(reading, surface);
         } else {
@@ -797,6 +804,19 @@ impl RakunEngine {
             }
             if !merged.contains(c) {
                 merged.push(c.clone());
+            }
+        }
+
+        // Keep the ordinary word first, followed by clock-derived candidates.
+        let dates = date_candidates::candidates(hiragana);
+        if !dates.is_empty() {
+            for c in dict_cands.iter().take(1).chain(dates.iter()) {
+                if merged.len() >= limit {
+                    break;
+                }
+                if !merged.contains(c) {
+                    merged.push(c.clone());
+                }
             }
         }
 

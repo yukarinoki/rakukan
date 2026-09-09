@@ -232,6 +232,10 @@ pub enum Request {
     ShutdownIfConfigDiffers {
         config_json: Option<String>,
     },
+    /// Additive extension; older hosts reject this request safely.
+    ReverseReading {
+        text: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -211,6 +211,7 @@ fn request_label(req: &Request) -> &'static str {
         AvailableModelsJson => "AvailableModelsJson",
         Learn { .. } => "Learn",
         LearnForce { .. } => "LearnForce",
+        ReverseReading { .. } => "ReverseReading",
         MergeCandidatesForReading { .. } => "MergeCandidatesForReading",
         LastError => "LastError",
         DictStatus => "DictStatus",
@@ -458,6 +459,7 @@ fn dispatch_engine(eng: &mut DynEngine, req: Request) -> Response {
             eng.learn_force(&reading, &surface);
             Response::Unit
         }
+        ReverseReading { text } => Response::Strings(eng.reverse_readings(&text)),
         MergeCandidatesForReading {
             reading,
             llm_cands,
@@ -506,6 +508,61 @@ pub fn sleep_short() {
 #[cfg(test)]
 mod readiness_tests {
     use super::*;
+
+    #[test]
+    #[ignore = "requires RAKUKAN_TEST_ENGINE_DLL and installed dictionary"]
+    fn reconversion_and_date_candidates_through_real_dll() {
+        let dll = std::env::var_os("RAKUKAN_TEST_ENGINE_DLL").unwrap();
+        let mut engine = DynEngine::from_dll(std::path::Path::new(&dll), None).unwrap();
+        engine.start_load_dict();
+        let deadline = std::time::Instant::now() + Duration::from_secs(20);
+        while !engine.poll_dict_ready() {
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        for surface in ["橋", "径庭", "日本の橋"] {
+            let start = std::time::Instant::now();
+            let Response::Strings(readings) = dispatch_engine(
+                &mut engine,
+                Request::ReverseReading {
+                    text: surface.into(),
+                },
+            ) else {
+                panic!()
+            };
+            assert!(!readings.is_empty(), "{surface}");
+            println!("reverse {surface} -> {readings:?} in {:?}", start.elapsed());
+            if surface == "径庭" {
+                assert!(readings.contains(&"けいてい".into()));
+            }
+            if surface == "橋" {
+                let candidates: Vec<_> = readings
+                    .iter()
+                    .flat_map(|reading| engine.merge_candidates_for_reading(reading, vec![], 40))
+                    .collect();
+                assert!(candidates.iter().any(|c| c == "箸"), "{candidates:?}");
+            }
+        }
+        for reading in ["きょう", "あした", "いま", "ことし", "らいげつ"] {
+            let Response::Strings(candidates) = dispatch_engine(
+                &mut engine,
+                Request::MergeCandidatesForReading {
+                    reading: reading.into(),
+                    llm_cands: vec![],
+                    limit: 40,
+                },
+            ) else {
+                panic!()
+            };
+            assert!(
+                candidates
+                    .iter()
+                    .any(|c| c.chars().any(|ch| ch.is_ascii_digit())),
+                "{reading}: {candidates:?}"
+            );
+            println!("date {reading}: {candidates:?}");
+        }
+    }
 
     #[test]
     fn dictionary_change_restarts_host_even_when_config_is_unchanged() {
