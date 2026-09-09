@@ -558,6 +558,7 @@ impl ITfTextInputProcessor_Impl for TextServiceFactory_Impl {
     }
 
     fn Deactivate(&self) -> windows::core::Result<()> {
+        tray_ipc::clear();
         diag::event(DiagEvent::Deactivate);
         let inner = self
             .inner
@@ -1280,6 +1281,7 @@ impl ITfCompartmentEventSink_Impl for TextServiceFactory_Impl {
 impl ITfThreadFocusSink_Impl for TextServiceFactory_Impl {
     fn OnSetThreadFocus(&self) -> windows::core::Result<()> {
         tracing::debug!("OnSetThreadFocus");
+        tray_ipc::publish(crate::engine::state::ime_mode_get_atomic());
         Ok(())
     }
 

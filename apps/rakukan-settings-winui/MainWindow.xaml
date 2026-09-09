@@ -41,6 +41,11 @@
                         <SymbolIcon Symbol="Home" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
+                <NavigationViewItem Tag="Appearance" Content="外観">
+                    <NavigationViewItem.Icon>
+                        <SymbolIcon Symbol="Font" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
                 <NavigationViewItem Tag="Input" Content="入力">
                     <NavigationViewItem.Icon>
                         <SymbolIcon Symbol="Keyboard" />
@@ -166,6 +171,18 @@
                                         <NumberBox x:Name="ConversionBeamSizeBox" SmallChange="1" Minimum="1" Maximum="30" SpinButtonPlacementMode="Inline" ValueChanged="ConversionBeamSizeBox_ValueChanged" />
                                     </StackPanel>
                                 </Grid>
+
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <ScrollViewer x:Name="AppearancePage" Visibility="Collapsed">
+                    <StackPanel Margin="32,24,32,32" Spacing="20">
+                        <TextBlock Style="{ThemeResource TitleTextBlockStyle}" Text="外観" />
+                        <Border Padding="20" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="16">
+                            <StackPanel Spacing="12">
+                                <TextBlock Style="{ThemeResource SubtitleTextBlockStyle}" Text="候補の文字サイズ" />
                                 <Grid ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
@@ -179,6 +196,24 @@
                                         <TextBlock Opacity="0.7" TextWrapping="Wrap" Text="100% 表示時のサイズです。Windows の拡大率に合わせて文字・行間・余白を拡大します。次回の候補表示から反映。" />
                                     </StackPanel>
                                 </Grid>
+                            </StackPanel>
+                        </Border>
+                        <Border Padding="20" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="16">
+                            <StackPanel Spacing="12">
+                                <TextBlock Style="{ThemeResource SubtitleTextBlockStyle}" Text="入力位置のキャレット" />
+                                <ToggleSwitch x:Name="CaretWidthEnabledToggle" Header="IME のオン／オフで太さを変える" OnContent="有効" OffContent="無効" />
+                                <Grid ColumnSpacing="20">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" Spacing="8">
+                                        <TextBlock Text="IME オン時の太さ (1–20)" />
+                                        <NumberBox x:Name="CaretOnWidthBox" Minimum="1" Maximum="20" SmallChange="1" SpinButtonPlacementMode="Inline" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Spacing="8">
+                                        <TextBlock Text="IME オフ時の太さ (1–20)" />
+                                        <NumberBox x:Name="CaretOffWidthBox" Minimum="1" Maximum="20" SmallChange="1" SpinButtonPlacementMode="Inline" />
+                                    </StackPanel>
+                                </Grid>
+                                <TextBlock Opacity="0.7" TextWrapping="Wrap" Text="Windows のテキストカーソルの太さを切り替えます。無効にすると元の設定に戻ります。独自描画のアプリでは反映されない場合や、入力欄を選び直す必要がある場合があります。" />
                             </StackPanel>
                         </Border>
                     </StackPanel>

@@ -1,15 +1,18 @@
 //! システムトレイ用：入力モード共有（DLL→トレイ常駐プロセス）
 //!
 //! TSF DLL は複数プロセスにロードされうるため、
-//! - `Local\\rakukan.mode` の共有メモリ（u32）へ現在モードを書き込み
+//! - `Local\\rakukan.mode` の共有メモリ（AtomicU64、v2）へ現在モードを書き込み
 //! - `Local\\rakukan.mode.changed` のイベントを SetEvent
 //!   という *最小IPC* でトレイアプリに通知する。
 //!
 //! 値フォーマット：
-//! - bit0..1 : 予約（常に 0。旧版の入力モード欄）
+//! - bit32..63 : 発信元プロセス ID（前面アプリの状態だけを適用する）
 //! - bit8    : open (1=IME オン, 0=IME オフ)
 
-use std::sync::OnceLock;
+use std::sync::{
+    OnceLock,
+    atomic::{AtomicU64, Ordering},
+};
 
 use windows::Win32::{
     Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE},
@@ -18,14 +21,14 @@ use windows::Win32::{
             CreateFileMappingW, FILE_MAP_WRITE, MEMORY_MAPPED_VIEW_ADDRESS, MapViewOfFile,
             PAGE_READWRITE, UnmapViewOfFile,
         },
-        Threading::{CreateEventW, SetEvent},
+        Threading::{CreateEventW, GetCurrentProcessId, SetEvent},
     },
 };
 
 use crate::engine::ime_mode::ImeMode;
 
-const MAP_NAME: &str = "Local\\rakukan.mode";
-const EVT_NAME: &str = "Local\\rakukan.mode.changed";
+const MAP_NAME: &str = "Local\\rakukan.mode.v2";
+const EVT_NAME: &str = "Local\\rakukan.mode.v2.changed";
 
 #[derive(Copy, Clone)]
 struct TrayIpc {
@@ -45,8 +48,8 @@ fn to_wide_z(s: &str) -> Vec<u16> {
     v
 }
 
-fn encode(mode: ImeMode) -> u32 {
-    (mode.is_on() as u32) << 8
+fn encode(mode: ImeMode) -> u64 {
+    (u64::from(unsafe { GetCurrentProcessId() }) << 32) | ((mode.is_on() as u64) << 8)
 }
 
 /// 共有メモリとイベントを初期化する。
@@ -65,11 +68,11 @@ pub fn init() -> windows::core::Result<()> {
             None,
             PAGE_READWRITE,
             0,
-            4,
+            8,
             windows::core::PCWSTR(map_name.as_ptr()),
         )?;
 
-        let view = MapViewOfFile(map, FILE_MAP_WRITE, 0, 0, 4);
+        let view = MapViewOfFile(map, FILE_MAP_WRITE, 0, 0, 8);
         if view.Value.is_null() {
             let _ = CloseHandle(map);
             return Err(windows::core::Error::from_win32());
@@ -90,13 +93,38 @@ pub fn init() -> windows::core::Result<()> {
 
 /// 現在の IME オン/オフを共有し、トレイへ通知する。
 pub fn publish(mode: ImeMode) {
+    // Background applications must not overwrite the foreground mode snapshot.
+    unsafe {
+        use windows::Win32::UI::WindowsAndMessaging::{
+            GetForegroundWindow, GetWindowThreadProcessId,
+        };
+        let mut pid = 0;
+        GetWindowThreadProcessId(GetForegroundWindow(), Some(&mut pid));
+        if pid != GetCurrentProcessId() {
+            return;
+        }
+    }
     let _ = init();
     let Some(ipc) = IPC.get().copied() else {
         return;
     };
     unsafe {
-        (ipc.view.Value as *mut u32).write_volatile(encode(mode));
+        (&*(ipc.view.Value as *const AtomicU64)).store(encode(mode), Ordering::SeqCst);
         let _ = SetEvent(ipc.evt);
+    }
+}
+
+/// Stop applying rakukan's width when its TSF service is deactivated.
+pub fn clear() {
+    if let Some(ipc) = IPC.get() {
+        unsafe {
+            let value = &*(ipc.view.Value as *const AtomicU64);
+            let current = value.load(Ordering::SeqCst);
+            if (current >> 32) as u32 == GetCurrentProcessId() {
+                let _ = value.compare_exchange(current, 0, Ordering::SeqCst, Ordering::SeqCst);
+                let _ = SetEvent(ipc.evt);
+            }
+        }
     }
 }
 

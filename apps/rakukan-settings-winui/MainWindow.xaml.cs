@@ -78,6 +78,9 @@ public sealed partial class MainWindow : Window
             NumCandidatesBox.Value = bundle.Config.NumCandidates ?? 6;
             ConversionBeamSizeBox.Value = Math.Max(bundle.Config.ConversionBeamSize, (uint)NumCandidatesBox.Value);
             CandidateFontHeightBox.Value = bundle.Config.CandidateFontHeight;
+            CaretWidthEnabledToggle.IsOn = bundle.Config.CaretWidthEnabled;
+            CaretOnWidthBox.Value = bundle.Config.CaretOnWidth;
+            CaretOffWidthBox.Value = bundle.Config.CaretOffWidth;
 
             SelectComboValue(KeyboardLayoutCombo, bundle.Config.KeyboardLayout);
             ReloadOnModeSwitchToggle.IsOn = bundle.Config.ReloadOnModeSwitch;
@@ -149,6 +152,9 @@ public sealed partial class MainWindow : Window
             NumCandidates = numCandidates,
             ConversionBeamSize = conversionBeamSize,
             CandidateFontHeight = candidateFontHeight,
+            CaretWidthEnabled = CaretWidthEnabledToggle.IsOn,
+            CaretOnWidth = ParseUInt(CaretOnWidthBox.Value, "IME オン時のキャレット幅", 1, 20),
+            CaretOffWidth = ParseUInt(CaretOffWidthBox.Value, "IME オフ時のキャレット幅", 1, 20),
             KeyboardLayout = SelectedComboValue(KeyboardLayoutCombo),
             ReloadOnModeSwitch = ReloadOnModeSwitchToggle.IsOn,
             DefaultMode = SelectedComboValue(DefaultModeCombo),
@@ -234,6 +240,7 @@ public sealed partial class MainWindow : Window
     private void ShowPage(string tag)
     {
         GeneralPage.Visibility = tag == "General" ? Visibility.Visible : Visibility.Collapsed;
+        AppearancePage.Visibility = tag == "Appearance" ? Visibility.Visible : Visibility.Collapsed;
         InputPage.Visibility = tag == "Input" ? Visibility.Visible : Visibility.Collapsed;
         KeysPage.Visibility = tag == "Keys" ? Visibility.Visible : Visibility.Collapsed;
         LivePage.Visibility = tag == "Live" ? Visibility.Visible : Visibility.Collapsed;
@@ -745,7 +752,7 @@ public sealed partial class MainWindow : Window
         NumberBox[] numberBoxes =
         [
             NGpuLayersBox, MainGpuBox, NumCandidatesBox, ConversionBeamSizeBox,
-            CandidateFontHeightBox, DebounceMsBox, BeamSizeBox, MinCharsBox,
+            CaretOnWidthBox, CaretOffWidthBox, CandidateFontHeightBox, DebounceMsBox, BeamSizeBox, MinCharsBox,
         ];
         foreach (var box in numberBoxes)
         {
@@ -765,7 +772,7 @@ public sealed partial class MainWindow : Window
 
         ToggleSwitch[] toggles =
         [
-            ReloadOnModeSwitchToggle, RememberKanaModeToggle, AutoLearnToggle,
+            CaretWidthEnabledToggle, ReloadOnModeSwitchToggle, RememberKanaModeToggle, AutoLearnToggle,
             KeymapInheritToggle, LiveEnabledToggle, UseLlmToggle, PreferDictionaryFirstToggle,
         ];
         foreach (var toggle in toggles)

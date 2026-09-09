@@ -7,6 +7,14 @@ void Check(bool condition, string message) { if (!condition) throw new Exception
 string FileAt(string name) => Path.Combine(directory, name);
 try
 {
+    var appearanceRoot = Tomlyn.Toml.ToModel("[appearance]\ncandidate_font_height=33\ncaret_width_enabled=true\ncaret_on_width=6\ncaret_off_width=2\n");
+    var settings = SettingsStore.LoadConfig(appearanceRoot);
+    Check(settings.CaretWidthEnabled && settings.CaretOnWidth == 6 && settings.CaretOffWidth == 2 && settings.CandidateFontHeight == 33, "appearance load");
+    SettingsStore.SaveConfig(appearanceRoot, settings);
+    var reloaded = SettingsStore.LoadConfig(Tomlyn.Toml.ToModel(Tomlyn.Toml.FromModel(appearanceRoot)));
+    Check(reloaded.CaretWidthEnabled && reloaded.CaretOnWidth == 6 && reloaded.CaretOffWidth == 2 && reloaded.CandidateFontHeight == 33, "appearance round trip");
+    var legacy = SettingsStore.LoadConfig(Tomlyn.Toml.ToModel("[appearance]\ncandidate_font_height=17"));
+    Check(!legacy.CaretWidthEnabled && legacy.CaretOnWidth == 4 && legacy.CaretOffWidth == 1, "legacy defaults");
     Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
     const string sample = "しながし\t品貸\t名詞\r\nたのむら\t田之村\t姓\r\n";
     foreach (var encoding in new Encoding[] { new UnicodeEncoding(false, true, true), new UnicodeEncoding(true, true, true), new UTF8Encoding(true, true), new UTF8Encoding(false, true), Encoding.GetEncoding(932) })

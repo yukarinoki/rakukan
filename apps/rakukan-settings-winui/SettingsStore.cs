@@ -67,6 +67,9 @@ internal sealed class SettingsData
     public uint? NumCandidates { get; set; }
     public uint ConversionBeamSize { get; set; } = 6;
     public int CandidateFontHeight { get; set; } = 17;
+    public bool CaretWidthEnabled { get; set; }
+    public uint CaretOnWidth { get; set; } = 4;
+    public uint CaretOffWidth { get; set; } = 1;
     public string KeyboardLayout { get; set; } = "jis";
     public bool ReloadOnModeSwitch { get; set; } = true;
     /// <summary>起動時の IME 状態。"on" / "off"（旧値 "hiragana" / "alphanumeric" は読み込み時に変換）。</summary>
@@ -241,6 +244,9 @@ internal sealed class SettingsStore
 
         [appearance]
         candidate_font_height = 17
+        caret_width_enabled = false
+        caret_on_width = 4
+        caret_off_width = 1
 
         [diagnostics]
         dump_active_config = true
@@ -465,7 +471,7 @@ internal sealed class SettingsStore
         return Toml.ToModel(text) as TomlTable ?? new TomlTable();
     }
 
-    private static SettingsData LoadConfig(TomlTable root)
+    internal static SettingsData LoadConfig(TomlTable root)
     {
         var general = GetOrCreateTable(root, "general");
         var keyboard = GetOrCreateTable(root, "keyboard");
@@ -484,6 +490,9 @@ internal sealed class SettingsStore
             NumCandidates = GetUInt(conversion, "num_candidates") ?? GetUInt(root, "num_candidates"),
             ConversionBeamSize = GetUInt(conversion, "beam_size") ?? 6,
             // TSF 側 (config.rs) と同じ既定 17 / クランプ 10〜72
+            CaretWidthEnabled = GetBool(appearance, "caret_width_enabled") ?? false,
+            CaretOnWidth = (uint)Math.Clamp(GetInt(appearance, "caret_on_width") ?? 4, 1, 20),
+            CaretOffWidth = (uint)Math.Clamp(GetInt(appearance, "caret_off_width") ?? 1, 1, 20),
             CandidateFontHeight = Math.Clamp(GetInt(appearance, "candidate_font_height") ?? 17, 10, 72),
             KeyboardLayout = GetString(keyboard, "layout") ?? "jis",
             ReloadOnModeSwitch = GetBool(keyboard, "reload_on_mode_switch") ?? true,
@@ -502,7 +511,7 @@ internal sealed class SettingsStore
         };
     }
 
-    private static void SaveConfig(TomlTable root, SettingsData data)
+    internal static void SaveConfig(TomlTable root, SettingsData data)
     {
         var general = GetOrCreateTable(root, "general");
         var keyboard = GetOrCreateTable(root, "keyboard");
@@ -537,6 +546,9 @@ internal sealed class SettingsStore
         SetOptional(conversion, "num_candidates", data.NumCandidates);
         conversion["beam_size"] = data.ConversionBeamSize;
         appearance["candidate_font_height"] = data.CandidateFontHeight;
+        appearance["caret_width_enabled"] = data.CaretWidthEnabled;
+        appearance["caret_on_width"] = (long)data.CaretOnWidth;
+        appearance["caret_off_width"] = (long)data.CaretOffWidth;
         root.Remove("num_candidates");
     }
 

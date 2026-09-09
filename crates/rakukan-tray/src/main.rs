@@ -1,10 +1,12 @@
 #![windows_subsystem = "windows"]
 
+mod caret_width;
+
 use anyhow::Result;
 use std::{
     mem::size_of,
     ptr::null_mut,
-    sync::atomic::{AtomicBool, Ordering},
+    sync::atomic::{AtomicBool, AtomicU64, Ordering},
     thread,
 };
 
@@ -16,27 +18,26 @@ use windows::Win32::{
             OpenFileMappingW, PAGE_READWRITE, UnmapViewOfFile,
         },
         Threading::{
-            CreateEventW, EVENT_MODIFY_STATE, INFINITE, OpenEventW, SYNCHRONIZATION_ACCESS_RIGHTS,
-            SetEvent, WaitForSingleObject,
+            CreateEventW, EVENT_MODIFY_STATE, OpenEventW, SYNCHRONIZATION_ACCESS_RIGHTS, SetEvent,
+            WaitForSingleObject,
         },
     },
     UI::{
         Shell::{NIF_GUID, NIM_DELETE, NOTIFYICONDATAW, Shell_NotifyIconW},
         WindowsAndMessaging::{
             AppendMenuW, CW_USEDEFAULT, CreatePopupMenu, CreateWindowExW, DefWindowProcW,
-            DispatchMessageW, GetCursorPos, GetMessageW, LoadCursorW, MSG, PostMessageW,
-            PostQuitMessage, RegisterClassW, SW_HIDE, SetForegroundWindow, ShowWindow,
-            TPM_BOTTOMALIGN, TPM_LEFTALIGN, TPM_RIGHTBUTTON, TrackPopupMenu, TranslateMessage,
-            WM_APP, WM_COMMAND, WM_CREATE, WM_DESTROY, WM_RBUTTONUP, WM_TIMER, WNDCLASSW,
-            WS_OVERLAPPEDWINDOW,
+            DispatchMessageW, GetCursorPos, GetMessageW, LoadCursorW, MSG, PostQuitMessage,
+            RegisterClassW, SW_HIDE, SetForegroundWindow, ShowWindow, TPM_BOTTOMALIGN,
+            TPM_LEFTALIGN, TPM_RIGHTBUTTON, TrackPopupMenu, TranslateMessage, WM_APP, WM_COMMAND,
+            WM_CREATE, WM_DESTROY, WM_RBUTTONUP, WM_TIMER, WNDCLASSW, WS_OVERLAPPEDWINDOW,
         },
     },
 };
 use windows::core::GUID;
 use windows::core::PCWSTR;
 
-const MAP_NAME: &str = "Local\\rakukan.mode";
-const EVT_NAME: &str = "Local\\rakukan.mode.changed";
+const MAP_NAME: &str = "Local\\rakukan.mode.v2";
+const EVT_NAME: &str = "Local\\rakukan.mode.v2.changed";
 const RELOAD_EVT_NAME: &str = "Local\\rakukan.engine.reload";
 const WM_TRAY: u32 = WM_APP + 1;
 const WM_MODE_UPDATE: u32 = WM_APP + 2;
@@ -58,12 +59,6 @@ fn to_wide_z(s: &str) -> Vec<u16> {
     let mut v: Vec<u16> = s.encode_utf16().collect();
     v.push(0);
     v
-}
-
-/// 共有メモリの値から IME オン/オフを取り出す（bit8 = open）。
-/// bit0..1 は旧版の入力モード欄で、現在は常に 0。
-fn decode(v: u32) -> bool {
-    ((v >> 8) & 1) != 0
 }
 
 struct Shared {
@@ -100,13 +95,13 @@ impl Shared {
                         None,
                         PAGE_READWRITE,
                         0,
-                        4,
+                        8,
                         PCWSTR(map_name.as_ptr()),
                     )
                 }
             })?;
 
-        let view = unsafe { MapViewOfFile(map, FILE_MAP_READ, 0, 0, 4) };
+        let view = unsafe { MapViewOfFile(map, FILE_MAP_READ, 0, 0, 8) };
         if view.Value.is_null() {
             let _ = unsafe { CloseHandle(map) };
             anyhow::bail!("MapViewOfFile failed");
@@ -124,8 +119,8 @@ impl Shared {
         Ok(Self { map, evt, view })
     }
 
-    fn read(&self) -> u32 {
-        unsafe { (self.view.Value as *const u32).read_volatile() }
+    fn read(&self) -> u64 {
+        unsafe { (&*(self.view.Value as *const AtomicU64)).load(Ordering::SeqCst) }
     }
 }
 
@@ -246,6 +241,16 @@ fn delete_notify_icon(hwnd: HWND) -> Result<()> {
 }
 
 fn main() -> Result<()> {
+    // Only one controller may own the system-wide caret setting.
+    use windows::Win32::{
+        Foundation::{ERROR_ALREADY_EXISTS, GetLastError},
+        System::Threading::CreateMutexW,
+    };
+    let mutex_name = to_wide_z("Local\\rakukan.tray.instance");
+    let _instance = unsafe { CreateMutexW(None, false, PCWSTR(mutex_name.as_ptr()))? };
+    if unsafe { GetLastError() } == ERROR_ALREADY_EXISTS {
+        return Ok(());
+    }
     unsafe {
         let class = to_wide_z("rakukan.tray");
         let wc = WNDCLASSW {
@@ -281,19 +286,17 @@ fn main() -> Result<()> {
 
         // notifier thread
         // HWND is not Send; pass its raw value across threads.
-        let hwnd2 = hwnd.0 as usize;
+
         let evt_for_shutdown = shared.evt; // HANDLE is Copy
         let watcher = thread::spawn(move || {
             // shared is owned by this thread; it will be dropped at thread end.
+            let mut caret = caret_width::Controller::new();
             while RUNNING.load(Ordering::Acquire) {
-                let _ = WaitForSingleObject(shared.evt, INFINITE);
+                let _ = WaitForSingleObject(shared.evt, 250);
                 if !RUNNING.load(Ordering::Acquire) {
                     break;
                 }
-                let open = decode(shared.read());
-                let w = WPARAM(open as usize);
-                let hwnd_send = HWND(hwnd2 as *mut core::ffi::c_void);
-                let _ = PostMessageW(hwnd_send, WM_MODE_UPDATE, w, LPARAM(0));
+                caret.update(shared.read());
             }
         });
 
