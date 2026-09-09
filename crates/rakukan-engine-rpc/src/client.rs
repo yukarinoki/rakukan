@@ -12,6 +12,7 @@
 //! 保持するので並列実行はされない（DynEngine でも同じ前提）。
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
@@ -36,6 +37,9 @@ static HOST_SPAWN_GUARD: LazyLock<Mutex<HostSpawnGuard>> =
 
 pub struct RpcEngine {
     inner: Mutex<Connection>,
+    observed_at: Instant,
+    last_reply_ms: AtomicU64,
+    last_call_failed: AtomicBool,
 }
 
 struct Connection {
@@ -105,6 +109,9 @@ impl RpcEngine {
         conn.ensure_connected()?;
         Ok(Self {
             inner: Mutex::new(conn),
+            observed_at: Instant::now(),
+            last_reply_ms: AtomicU64::new(0),
+            last_call_failed: AtomicBool::new(false),
         })
     }
 
@@ -207,7 +214,28 @@ impl RpcEngine {
             .inner
             .lock()
             .map_err(|_| anyhow!("RpcEngine mutex poisoned"))?;
-        guard.call_with_retry(req)
+        let result = guard.call_with_retry(req);
+        let failed = !matches!(&result, Ok(response) if !matches!(response, Response::Error(_)));
+        self.last_call_failed.store(failed, Ordering::Relaxed);
+        if !failed {
+            self.last_reply_ms.store(
+                self.observed_at.elapsed().as_millis() as u64,
+                Ordering::Relaxed,
+            );
+        }
+        result
+    }
+
+    /// Cached only: never send RPC or acquire the connection mutex from a menu.
+    pub fn last_response_health(&self) -> (bool, Duration) {
+        (
+            self.last_call_failed.load(Ordering::Relaxed),
+            self.observed_at
+                .elapsed()
+                .saturating_sub(Duration::from_millis(
+                    self.last_reply_ms.load(Ordering::Relaxed),
+                )),
+        )
     }
 
     fn call_unit(&self, req: Request) -> Result<()> {

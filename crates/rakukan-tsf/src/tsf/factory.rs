@@ -239,6 +239,17 @@ fn show_langbar_popup_menu(
             windows::core::PCWSTR(reload.as_ptr()),
         );
 
+        let _ = AppendMenuW(menu, MF_SEPARATOR, 0, windows::core::PCWSTR::null());
+        for (index, line) in super::status_menu::lines().iter().enumerate() {
+            let text = to_wide_menu_text(line);
+            let _ = AppendMenuW(
+                menu,
+                windows::Win32::UI::WindowsAndMessaging::MF_GRAYED,
+                1000 + index,
+                windows::core::PCWSTR(text.as_ptr()),
+            );
+        }
+
         // TPM_RETURNCMD 指定時はキャンセルも失敗も戻り値 0 なので、直前に
         // last error を 0 にしておき、0 が返ったときに GetLastError で区別する。
         SetLastError(WIN32_ERROR(0));
@@ -1170,6 +1181,27 @@ impl ITfLangBarItemButton_Impl for TextServiceFactory_Impl {
                 &reload,
                 std::ptr::null_mut(),
             );
+        }
+        unsafe {
+            let _ = menu.AddMenuItem(
+                0,
+                TF_LBMENUF_SEPARATOR,
+                HBITMAP::default(),
+                HBITMAP::default(),
+                &[],
+                std::ptr::null_mut(),
+            );
+            for (index, line) in super::status_menu::lines().iter().enumerate() {
+                let text: Vec<u16> = line.encode_utf16().collect();
+                let _ = menu.AddMenuItem(
+                    1000 + index as u32,
+                    windows::Win32::UI::TextServices::TF_LBMENUF_GRAYED,
+                    HBITMAP::default(),
+                    HBITMAP::default(),
+                    &text,
+                    std::ptr::null_mut(),
+                );
+            }
         }
         Ok(())
     }

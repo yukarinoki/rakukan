@@ -69,6 +69,13 @@ static DICT_READY_LATCH: AtomicBool = AtomicBool::new(false);
 /// モデルロード完了のラッチ（`DICT_READY_LATCH` と同じ方針）。
 static MODEL_READY_LATCH: AtomicBool = AtomicBool::new(false);
 
+pub fn last_observed_readiness() -> (bool, bool) {
+    (
+        DICT_READY_LATCH.load(AO::Acquire),
+        MODEL_READY_LATCH.load(AO::Acquire),
+    )
+}
+
 /// M1.6 T-HOST2: ラッチリセット時刻（UNIX epoch ms）。false → true 遷移で
 /// 経過時間をログする。0 の間は計測無効（起動直後など）。
 static READY_RESET_AT_MS: AtomicU64 = AtomicU64::new(0);
