@@ -26,6 +26,9 @@ Copy-Item "$repoRoot\.build\publish\settings-ui" "$dist\settings-ui" -Recurse
 foreach ($name in @('ai', 'settings-ui')) {
     if (-not (Test-Path "$dist\$name\coreclr.dll")) { throw "$name must be published self-contained" }
 }
+foreach ($name in @('App.xbf', 'MainWindow.xbf', 'rakukan-settings.pri')) {
+    if (-not (Test-Path "$dist\settings-ui\$name")) { throw "Missing WinUI runtime resource: $name" }
+}
 Push-Location $repoRoot
 try {
     cargo metadata --locked --offline --filter-platform x86_64-pc-windows-msvc --format-version 1 > .build\release-metadata.json

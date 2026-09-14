@@ -37,4 +37,14 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
+
+  <!-- Unpackaged WinUI publish does not include the generated XBF/PRI files
+       automatically. Keep them paired with the assembly in every distribution. -->
+  <Target Name="PublishWinUIResources" AfterTargets="Publish">
+    <ItemGroup>
+      <WinUIRuntimeResource Include="$(TargetDir)App.xbf;$(TargetDir)MainWindow.xbf;$(TargetDir)$(AssemblyName).pri" />
+    </ItemGroup>
+    <Error Condition="!Exists('%(WinUIRuntimeResource.Identity)')" Text="Missing WinUI runtime resource: %(WinUIRuntimeResource.Identity)" />
+    <Copy SourceFiles="@(WinUIRuntimeResource)" DestinationFolder="$(PublishDir)" />
+  </Target>
 </Project>
