@@ -397,6 +397,9 @@ impl super::TextServiceFactory_Impl {
     /// `end_composition(_, "また")` が走り、composition に残っていた
     /// 37 文字が丸ごと消えた。
     fn commit_visible_composition(&self, ctx: &ITfContext, tid: u32) -> Result<()> {
+        if crate::engine::state::ime_mode_get_atomic().is_direct() {
+            return self.finish_direct_mode(ctx.clone(), tid);
+        }
         let mut guard = engine_try_get_or_create()?;
         let Some(engine) = guard.as_mut() else {
             return Ok(());
@@ -464,6 +467,10 @@ impl super::TextServiceFactory_Impl {
         tid: u32,
         new: ImeMode,
     ) -> Result<bool> {
+        crate::engine::config::refresh_appearance_if_changed();
+        if !new.allowed(&crate::engine::config::current_config().input) {
+            return Ok(false);
+        }
         if let Some(ctx) = ctx.as_ref() {
             self.commit_visible_composition(ctx, tid)?;
         }

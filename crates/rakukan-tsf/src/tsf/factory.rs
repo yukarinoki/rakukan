@@ -87,6 +87,7 @@ use crate::{
 // M3 T1-A: factory.rs 分割。composition=on_compose, 入力=on_input, 変換=on_convert,
 // 編集操作=edit_ops, dispatcher (handle_action)=dispatch。
 pub(in crate::tsf) mod ai;
+mod direct_modes;
 mod dispatch;
 mod edit_ops;
 mod on_compose;
@@ -153,9 +154,34 @@ fn apply_langbar_mode(factory: &TextServiceFactory_Impl, new_mode: ImeMode) {
         .map(|inner| inner.client_id)
         .unwrap_or_default();
     tracing::info!("langbar menu: ime {:?}", new_mode);
-    if let Err(e) = factory.switch_ime(None, tid, new_mode) {
+    if let Err(e) = factory.switch_ime(factory.focused_context(), tid, new_mode) {
         tracing::warn!("langbar menu: switch_ime failed: {e}");
     }
+}
+
+const ID_MENU_HALF_KATAKANA: u32 = 20;
+const ID_MENU_FULL_ALPHANUMERIC: u32 = 21;
+
+fn optional_mode_menu() -> Vec<(u32, ImeMode, &'static str)> {
+    crate::engine::config::refresh_appearance_if_changed();
+    let input = crate::engine::config::current_config().input;
+    optional_mode_entries(&input)
+}
+
+fn optional_mode_entries(
+    input: &crate::engine::config::InputConfig,
+) -> Vec<(u32, ImeMode, &'static str)> {
+    [
+        (ID_MENU_HALF_KATAKANA, ImeMode::HalfKatakana, "半角カタカナ"),
+        (
+            ID_MENU_FULL_ALPHANUMERIC,
+            ImeMode::FullAlphanumeric,
+            "全角英数",
+        ),
+    ]
+    .into_iter()
+    .filter(|(_, mode, _)| mode.allowed(input))
+    .collect()
 }
 
 fn handle_langbar_menu_command(factory: &TextServiceFactory_Impl, id: u32) {
@@ -166,6 +192,8 @@ fn handle_langbar_menu_command(factory: &TextServiceFactory_Impl, id: u32) {
         ID_MENU_IME_OFF => {
             apply_langbar_mode(factory, ImeMode::Off);
         }
+        ID_MENU_HALF_KATAKANA => apply_langbar_mode(factory, ImeMode::HalfKatakana),
+        ID_MENU_FULL_ALPHANUMERIC => apply_langbar_mode(factory, ImeMode::FullAlphanumeric),
         ID_MENU_SETTINGS => {
             settings_launcher::launch_settings_app();
         }
@@ -227,6 +255,19 @@ fn show_langbar_popup_menu(
             ID_MENU_IME_OFF as usize,
             windows::core::PCWSTR(ime_off.as_ptr()),
         );
+        for (id, mode, label) in optional_mode_menu() {
+            let label = to_wide_menu_text(label);
+            let _ = AppendMenuW(
+                menu,
+                MENU_ITEM_FLAGS(if current_mode == mode {
+                    TF_LBMENUF_RADIOCHECKED
+                } else {
+                    0
+                }),
+                id as usize,
+                windows::core::PCWSTR(label.as_ptr()),
+            );
+        }
         let _ = AppendMenuW(menu, MF_SEPARATOR, 0, windows::core::PCWSTR::null());
         let _ = AppendMenuW(
             menu,
@@ -730,6 +771,14 @@ impl ITfKeyEventSink_Impl for TextServiceFactory_Impl {
             return Ok(if eat { TRUE } else { FALSE });
         }
 
+        if crate::engine::state::ime_mode_get_atomic().is_direct() {
+            let has_preedit = session_get().map(|s| !s.is_idle()).unwrap_or(false);
+            return Ok(if key_should_eat(&action, has_preedit) {
+                TRUE
+            } else {
+                FALSE
+            });
+        }
         let has_preedit = engine_try_get_or_create()
             .ok()
             .and_then(|g| g.as_ref().map(|e| !e.preedit_is_empty()))
@@ -1189,7 +1238,7 @@ impl ITfLangBarItem_Impl for TextServiceFactory_Impl {
     }
     fn GetTooltipString(&self) -> windows::core::Result<BSTR> {
         let label = current_backend_label();
-        Ok(BSTR::from(format!("rakukan [{}]", label)))
+        Ok(BSTR::from(format!("yurukan [{}]", label)))
     }
 }
 
@@ -1234,6 +1283,21 @@ impl ITfLangBarItemButton_Impl for TextServiceFactory_Impl {
                 &ime_off,
                 std::ptr::null_mut(),
             );
+            for (id, mode, label) in optional_mode_menu() {
+                let label: Vec<u16> = label.encode_utf16().collect();
+                let _ = menu.AddMenuItem(
+                    id,
+                    if current_mode == mode {
+                        TF_LBMENUF_RADIOCHECKED
+                    } else {
+                        0
+                    },
+                    HBITMAP::default(),
+                    HBITMAP::default(),
+                    &label,
+                    std::ptr::null_mut(),
+                );
+            }
             let _ = menu.AddMenuItem(
                 0,
                 TF_LBMENUF_SEPARATOR,
@@ -1308,6 +1372,7 @@ fn langbar_mode_char() -> &'static str {
         ImeMode::Off => "A",
         ImeMode::On if !crate::engine::state::is_conversion_ready() => "ー",
         ImeMode::On => "あ",
+        mode => mode.label(),
     }
 }
 
@@ -1489,5 +1554,32 @@ mod key_should_eat_tests {
                 key_should_eat(&UserAction::CursorEnd, has_preedit)
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod optional_mode_menu_tests {
+    use super::*;
+    #[test]
+    fn menu_omits_disabled_modes_and_keeps_each_switch_independent() {
+        let mut input = crate::engine::config::InputConfig::default();
+        assert!(optional_mode_entries(&input).is_empty());
+        input.half_katakana_mode_enabled = true;
+        assert_eq!(
+            optional_mode_entries(&input),
+            vec![(ID_MENU_HALF_KATAKANA, ImeMode::HalfKatakana, "半角カタカナ")]
+        );
+        input.half_katakana_mode_enabled = false;
+        input.full_alphanumeric_mode_enabled = true;
+        assert_eq!(
+            optional_mode_entries(&input),
+            vec![(
+                ID_MENU_FULL_ALPHANUMERIC,
+                ImeMode::FullAlphanumeric,
+                "全角英数"
+            )]
+        );
+        input.half_katakana_mode_enabled = true;
+        assert_eq!(optional_mode_entries(&input).len(), 2);
     }
 }

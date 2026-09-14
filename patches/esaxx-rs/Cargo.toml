@@ -2,6 +2,8 @@
 name = "esaxx-rs"
 version = "0.1.10"
 edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/Narsil/esaxx-rs"
 description = "esaxx-rs patched: static_crt(false) for /MD compatibility with llama-cpp-sys-2"
 
 [lib]

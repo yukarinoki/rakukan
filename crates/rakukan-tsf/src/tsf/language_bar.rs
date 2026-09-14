@@ -26,7 +26,7 @@ pub fn make_langbar_info() -> TF_LANGBARITEMINFO {
         ulSort: 0,
         szDescription: [0; 32],
     };
-    let desc: Vec<u16> = "rakukan".encode_utf16().collect();
+    let desc: Vec<u16> = "yurukan".encode_utf16().collect();
     for (i, &c) in desc.iter().take(31).enumerate() {
         info.szDescription[i] = c;
     }

@@ -1,8 +1,16 @@
-# rakukan v0.11.4
+# yurukan v0.11.5
+
+[**Windows版をダウンロード（インストーラー）**](https://github.com/yukarinoki/yurukan/releases/latest/download/yurukan-0.11.5-setup.exe) · [リリース詳細](https://github.com/yukarinoki/yurukan/releases/latest)
+
+yurukan は [fukuyori/rakukan](https://github.com/fukuyori/rakukan) から派生した日本語IMEです。上流とは独立したforkとして配布しています。元の著作権表示・ライセンスは維持しています。
+
+初期設定は **ライブ変換ON・AIモードOFF**。AIの初期接続先はローカルllama.cppと軽量Qwen GGUF（2B）です。追加の「半角カタカナ」「全角英数」入力モードは初期状態では無効で、設定の「基本」から個別に有効にすると右クリックメニューに現れます。既存設定のON/OFFは上書きしません。
+
+アップデート互換のため、内部のDLL名・保存先・TSF登録IDは従来の `rakukan` を維持しています。上流版との併用ではなく置き換えになります。Windowsの表示名は yurukan です。
 
 > ⚠️ **注意：現在テスト動作中です**
 >
-> rakukan は開発途中のソフトウェアです。インストールによって **Windows の動作が不安定になる可能性があります**。
+> yurukan は開発途中のソフトウェアです。インストールによって **Windows の動作が不安定になる可能性があります**。
 > ライブ変換は、非常にクセのある動きが見られ、現在まだバグが残っているので使用には我慢が必要になります。
 > TSF（Text Services Framework）DLL をシステムに登録するため、インストール・アンインストールの操作は
 > **自己責任** で行ってください。重要な作業環境への適用は推奨しません。
@@ -11,7 +19,7 @@ Windows 向け日本語 IME。
 [karukan](https://github.com/togatoga/karukan) の LLM ベース変換エンジンを中核とし、
 [azooKey-Windows](https://github.com/fkunn1326/azooKey-Windows) の TSF 層実装を参考に構築しています。
 
-rakukan は、ローカルで動く小型 LLM と Mozc 系辞書を組み合わせ、従来のかな漢字変換とは少し違う候補の出し方を試すための実験的な IME です。入力中の読みから候補を先読みするライブ変換、数字やアルファベットを壊さない literal 保護、ユーザー辞書・学習履歴による候補の優先順位調整を中心にしています。
+yurukan は、ローカルで動く小型 LLM と Mozc 系辞書を組み合わせ、従来のかな漢字変換とは少し違う候補の出し方を試すための実験的な IME です。入力中の読みから候補を先読みするライブ変換、数字やアルファベットを壊さない literal 保護、ユーザー辞書・学習履歴による候補の優先順位調整を中心にしています。
 
 設計上の大きな特徴は、TSF DLL と変換エンジンを別プロセスに分けていることです。Windows の入力フレームワーク側には軽いクライアントだけを置き、LLM や GPU バックエンドは `rakukan-engine-host.exe` 側で管理します。これにより、CPU / Vulkan / CUDA の engine DLL を設定で切り替えながら、IME 側の安定性をできるだけ保つ構成にしています。
 
@@ -33,7 +41,7 @@ rakukan は、ローカルで動く小型 LLM と Mozc 系辞書を組み合わ�
 
 ## 最新の変更
 
-v0.11.4 は入力状態を「IME オン / IME オフ」の 2 値に統一したリリースです。従来の入力モード 3 値（ひらがな / カタカナ / 英数）を廃止し、言語バーのメニューは「IME オン / IME オフ」になりました。カタカナは `F7` / 無変換キーで入力します。IME 切替のすべての経路を 1 か所に集約し、メニューで英数にした後にショートカットで切り替えると表示が「A」のまま残る問題を修正しました。keymap の旧アクション名（`mode_hiragana` など）と `default_mode` の旧値は引き続き読み込めます。あわせて、修飾キーの左右指定（`RAlt+Caps` など）、設定アプリの「主要ショートカット」再構成（IME ON / IME OFF の追加）とキー名ヘルプ、設定アプリの単一インスタンス化を追加しました。
+上流の v0.11.4 は入力状態を「IME オン / IME オフ」の 2 値に統一したリリースです。従来の入力モード 3 値（ひらがな / カタカナ / 英数）を廃止し、言語バーのメニューは「IME オン / IME オフ」になりました。カタカナは `F7` / 無変換キーで入力します。IME 切替のすべての経路を 1 か所に集約し、メニューで英数にした後にショートカットで切り替えると表示が「A」のまま残る問題を修正しました。keymap の旧アクション名（`mode_hiragana` など）と `default_mode` の旧値は引き続き読み込めます。あわせて、修飾キーの左右指定（`RAlt+Caps` など）、設定アプリの「主要ショートカット」再構成（IME ON / IME OFF の追加）とキー名ヘルプ、設定アプリの単一インスタンス化を追加しました。
 
 - v0.11.3: **候補ウィンドウのフォントサイズ変更に対応**（Issue #3 / PR #5）。`config.toml` の `[appearance]` `candidate_font_height` または設定アプリの「候補表示」から変更可能。設定の保存が一部のアプリの IME に反映されないことがある問題も修正。
 
@@ -53,11 +61,11 @@ v0.11.4 は入力状態を「IME オン / IME オフ」の 2 値に統一した�
 
 ## インストール（パッケージから）
 
-[Releases](https://github.com/fukuyori/rakukan/releases) の `rakukan-<version>-setup.exe` を実行します。管理者権限（UAC）が求められます。インストール先は `%LOCALAPPDATA%\rakukan\` で、終了時に言語リストへ rakukan が追加されます。
+[Releases](https://github.com/yukarinoki/yurukan/releases) の `yurukan-<version>-setup.exe` を実行します。管理者権限（UAC）が求められます。インストール先は `%LOCALAPPDATA%\rakukan\` で、終了時に言語リストへ yurukan が追加されます。
 
 **すでに旧版が入っている場合** は、DLL を掴んでいるプロセスを無くしてから実行してください:
 
-1. 言語バーで rakukan 以外の IME（例: Microsoft IME）に切り替える
+1. 言語バーで yurukan 以外の IME（例: Microsoft IME）に切り替える
 2. サインアウトする
 3. サインインする
 4. インストーラーを実行する
@@ -148,7 +156,7 @@ cargo make quick-install
 
 ## キー操作
 
-rakukan の入力状態は **IME オン**（かな漢字変換）と **IME オフ**（直接入力）の 2 つだけです。「ひらがなモード」「カタカナモード」「英数モード」といった独立したモードはありません。カタカナは `F7` や無変換キーで変換して入力します。言語バーのアイコン（「あ」/「A」）をクリックするとメニューから切り替えられます。
+yurukan の通常の入力状態は **IME オン**（かな漢字変換）と **IME オフ**（直接入力）の 2 つだけです。半角カタカナ・全角英数はオプションの入力モードとして「基本」で個別に有効化できます。無効のモードには切り替えられず、右クリックメニューにも表示されません。カタカナは `F7` や無変換キーで変換して入力します。言語バーのアイコン（「あ」/「A」）をクリックするとメニューから切り替えられます。
 
 | キー | 動作 |
 | ---- | ---- |
@@ -214,5 +222,14 @@ Get-Content "$env:LOCALAPPDATA\rakukan\rakukan.log" -Tail 40
 
 ## ライセンス
 
-rakukan 本体のコードは **MIT ライセンス** です。  
+yurukan 本体のコードは **MIT ライセンス** です。
 辞書・モデルなどの同梱物や取得物には、それぞれ個別のライセンス条件が適用されます。
+
+
+配布に含まれる原文のライセンスと帰属情報は [NOTICE](NOTICE) と
+[第三者ライセンス](docs/THIRD_PARTY_LICENSES.md) を参照してください。
+Mozc辞書はGoogle・NAIST・ICOT等の原文条件、jinenモデルはCC BY-SA 4.0です。
+通常変換用のjinenモデル・辞書・.NETランタイムはインストーラーに同梱します。
+AI用のQwenモデル・llama-serverは設定画面から任意でダウンロードします。
+
+配布用ビルド手順は [Windowsリリース作成](docs/windows-release.md) を参照してください。

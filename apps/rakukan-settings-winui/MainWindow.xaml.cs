@@ -34,7 +34,7 @@ public sealed partial class MainWindow : Window
         Closed += (_, _) => { _aiDownloadCancel?.Cancel(); _aiCancel?.Cancel(); };
 
         var ver = Assembly.GetEntryAssembly()?.GetName().Version;
-        VersionText.Text = ver is { } v ? $"rakukan v{v.Major}.{v.Minor}.{v.Build}" : "rakukan";
+        VersionText.Text = ver is { } v ? $"yurukan v{v.Major}.{v.Minor}.{v.Build}" : "yurukan";
 
         _keyFields = new Dictionary<ManagedKeyAction, TextBox>
         {
@@ -114,6 +114,8 @@ public sealed partial class MainWindow : Window
                 _keyFields[action].Text = bundle.Keymap.GetBinding(action);
             }
 
+            HalfKatakanaModeToggle.IsOn = bundle.Config.HalfKatakanaModeEnabled;
+            FullAlphanumericModeToggle.IsOn = bundle.Config.FullAlphanumericModeEnabled;
             LiveEnabledToggle.IsOn = bundle.Config.LiveEnabled;
             DebounceMsBox.Value = bundle.Config.DebounceMs;
             BeamSizeBox.Value = bundle.Config.BeamSize;
@@ -179,6 +181,8 @@ public sealed partial class MainWindow : Window
             AlphaWidth = SelectedComboValue(AlphaWidthCombo),
             SymbolWidth = SelectedComboValue(SymbolWidthCombo),
             AutoLearn = AutoLearnToggle.IsOn,
+            HalfKatakanaModeEnabled = HalfKatakanaModeToggle.IsOn,
+            FullAlphanumericModeEnabled = FullAlphanumericModeToggle.IsOn,
             LiveEnabled = LiveEnabledToggle.IsOn,
             DebounceMs = ParseULong(DebounceMsBox.Value, "デバウンス"),
             UseLlm = UseLlmToggle.IsOn,
@@ -792,6 +796,7 @@ public sealed partial class MainWindow : Window
         ToggleSwitch[] toggles =
         [
             CaretWidthEnabledToggle, ReloadOnModeSwitchToggle, RememberKanaModeToggle, AutoLearnToggle,
+            HalfKatakanaModeToggle, FullAlphanumericModeToggle,
             KeymapInheritToggle, LiveEnabledToggle, UseLlmToggle, PreferDictionaryFirstToggle,
         ];
         foreach (var toggle in toggles)

@@ -223,7 +223,7 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-Host ""
 Write-Host "[3/3] 完了!"
-$outputFile = Get-ChildItem "$PSScriptRoot\..\output\rakukan-*.exe" |
+$outputFile = Get-ChildItem "$PSScriptRoot\..\output\yurukan-*.exe" |
     Sort-Object LastWriteTime -Descending | Select-Object -First 1
 if ($outputFile) {
     Write-Host "インストーラー: $($outputFile.FullName)"

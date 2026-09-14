@@ -1,3 +1,6 @@
+yurukan — a fork of rakukan (https://github.com/fukuyori/rakukan)
+Fork modifications Copyright (c) 2026 yukarinoki and yurukan Contributors
+
 rakukan
 Copyright (c) 2024-2026 rakukan Contributors
 
@@ -12,17 +15,10 @@ This product includes dictionary data derived from the Mozc project.
 The dictionary data (rakukan.dict) is a binary format derived from:
   https://github.com/google/mozc/tree/master/src/data/dictionary_oss
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+Redistributed under the original Mozc license, including the Google BSD,
+NAIST / ICOT and public domain notices for dictionary data.
+The original license is included in licenses/MOZC-LICENSE.txt.
+The text dictionary was converted to the rakukan.dict binary format.
 
 ================================================================================
 karukan
@@ -44,3 +40,15 @@ implementation of azooKey-Windows.
 Source: https://github.com/fkunn1326/azooKey-Windows
 
 Licensed under the MIT License.
+
+================================================================================
+Bundled jinen model and tokenizer
+================================================================================
+jinen-v1-xsmall and GGUF conversion / quantization by togatogah.
+Source: https://huggingface.co/togatogah/jinen-v1-xsmall
+GGUF: https://huggingface.co/togatogah/jinen-v1-xsmall.gguf
+License: CC BY-SA 4.0 (licenses/CC-BY-SA-4.0.txt).
+The Q5_K_M GGUF and tokenizer are redistributed without further modifications.
+The model remains under CC BY-SA 4.0; it is not relicensed as MIT.
+
+Additional software license texts are included under licenses/.

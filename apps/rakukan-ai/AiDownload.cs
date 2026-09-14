@@ -34,7 +34,7 @@ public static class AiDownload
         // Exclusive file lease works across settings and command-line processes, across awaits.
         await using var lease = new FileStream(Path.Combine(DirectoryPath, ".download.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
         using var http = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
-        http.DefaultRequestHeaders.UserAgent.ParseAdd("rakukan-ai/0.11.4");
+        http.DefaultRequestHeaders.UserAgent.ParseAdd("yurukan-ai/0.11.5");
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(TimeSpan.FromMinutes(30));
         ct = timeout.Token;

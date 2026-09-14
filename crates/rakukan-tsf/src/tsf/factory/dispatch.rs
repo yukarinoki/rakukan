@@ -24,6 +24,18 @@ impl super::TextServiceFactory_Impl {
         tid: u32,
         sink: ITfCompositionSink,
     ) -> Result<bool> {
+        crate::engine::config::refresh_appearance_if_changed();
+        let mode = crate::engine::state::ime_mode_get_atomic();
+        if mode.is_direct() {
+            if !mode.allowed(&crate::engine::config::current_config().input) {
+                self.finish_direct_mode(ctx.clone(), tid)?;
+                self.switch_ime(Some(ctx.clone()), tid, crate::engine::ime_mode::ImeMode::On)?;
+            } else if let Some(eaten) =
+                self.handle_direct_mode(&action, ctx.clone(), tid, sink.clone(), mode)?
+            {
+                return Ok(eaten);
+            }
+        }
         let mut guard = engine_try_get_or_create()?;
         let engine = match guard.as_mut() {
             Some(e) => e,

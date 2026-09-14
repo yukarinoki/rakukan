@@ -5,7 +5,7 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d"
-    Title="Rakukan 設定">
+    Title="yurukan 設定">
     <Grid x:Name="RootGrid" Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
         <Grid.Resources>
             <Style x:Key="SettingsPageLayout" TargetType="StackPanel">
@@ -168,6 +168,12 @@
                             </Grid>
                         </StackPanel>
 
+                        <StackPanel Spacing="6">
+                            <TextBlock Style="{StaticResource SettingsSectionTitle}" Text="追加の入力モード" />
+                            <TextBlock TextWrapping="Wrap" Opacity="0.7" Text="有効にしたモードだけ、タスクバーの右クリックから選択できます。" />
+                            <ToggleSwitch x:Name="HalfKatakanaModeToggle" Header="半角カタカナ" OnContent="有効" OffContent="無効" />
+                            <ToggleSwitch x:Name="FullAlphanumericModeToggle" Header="全角英数" OnContent="有効" OffContent="無効" />
+                        </StackPanel>
                         <StackPanel Spacing="6">
                             <TextBlock Style="{StaticResource SettingsSectionTitle}" Text="候補表示" />
                             <TextBlock TextWrapping="Wrap" Opacity="0.7" Text="Space 変換で表示する候補数と、LLM 探索の上限を調整します。候補数を増やす場合は Space変換 beam も同じか大きい値にしてください。" />

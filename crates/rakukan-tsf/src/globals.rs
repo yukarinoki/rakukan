@@ -20,7 +20,7 @@ use windows::{
 pub const CLSID_PREFIX: &str = "CLSID\\";
 #[allow(dead_code)]
 pub const INPROC_SUFFIX: &str = "\\InProcServer32";
-pub const SERVICE_NAME: &str = "Rakukan";
+pub const SERVICE_NAME: &str = "yurukan";
 
 // rakukan unique GUIDs
 pub const GUID_TEXT_SERVICE: GUID = GUID::from_u128(0xc0ddf8b0_1f1e_4c2d_a9e3_5f7b8d6e2a4c);

@@ -1,0 +1,125 @@
+---
+license: cc-by-sa-4.0
+language:
+- ja
+tags:
+- japanese input
+- kana kanji conversion
+datasets:
+- Miwa-Keita/zenz-v2.5-dataset
+pipeline_tag: text2text-generation
+---
+
+# jinen-v1-xsmall
+
+jinen-v1-xsmallはかな漢字変換のためのGPT-2アーキテクチャの言語モデルです。
+
+* BPEトークナイザー
+* かな漢字変換タスクにおいて高い性能
+* 文脈を考慮した変換が可能
+
+## Model Details
+
+### Model Description
+
+- **Developed by:** [togatogah](https://huggingface.co/togatogah)
+- **Model type:** GPT-2
+- **Language(s) (NLP):** Japanese
+- **License:** [CC-BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/deed.ja)
+- **Parameters:** 36M
+
+### Data Sources
+
+本モデルは[Miwa-Keita/zenz-v2.5-dataset](https://huggingface.co/datasets/Miwa-Keita/zenz-v2.5-dataset)に独自の前処理を施したデータを用いて学習しています。
+
+### Training Hyperparameters
+
+| パラメータ | 値 |
+|---|---|
+| learning_rate | 0.001 |
+| train_batch_size | 1500 |
+| gradient_accumulation_steps | 2 |
+| total_train_batch_size | 3000 |
+| optimizer | AdamW (betas=(0.9,0.999), epsilon=1e-08) |
+| lr_scheduler_type | cosine |
+| lr_scheduler_warmup_steps | 1000 |
+| num_epochs | 1 |
+| precision | bfloat16 |
+
+### Framework Versions
+
+- Transformers 5.0.0
+- PyTorch 2.9.0+cu126
+- Datasets 4.0.0
+- Tokenizers 0.22.2
+
+## jinen Format
+
+モデルはPrivate Use Areaの特殊Unicodeトークンを使用するjinen形式でトレーニングされています。
+この形式はzenzaiのかな漢字変換モデル「zenz」の第3世代（zenz-v3）フォーマットを参考にしています。
+zenz-v3ではコンテキストを前置する `\uEE02<context>\uEE00<input_katakana>\uEE01<output></s>` 方式を推奨しており、jinen形式も同じトークン配置を採用しています。
+
+詳細は[zenzaiのドキュメント](https://github.com/azooKey/AzooKeyKanaKanjiConverter/blob/main/Docs/zenzai.md)を参照してください。
+
+| トークン | Unicode | 用途 |
+|---|---|---|
+| INPUT_START | U+EE00 | カタカナ入力開始 |
+| OUTPUT_START | U+EE01 | 漢字出力開始 |
+| CONTEXT | U+EE02 | 左コンテキストマーカー |
+
+プロンプト形式：`{CONTEXT}<context>{INPUT_START}<katakana>{OUTPUT_START}`
+
+## Evaluation
+
+[AJIMEE-Bench](https://github.com/azooKey/AJIMEE-Bench) による評価結果です。本モデルのトークナイザーは NFKC 正規化込みで動作するため、NFKC 適用条件下での Acc@1 が実運用上の値となります。
+
+| モデル | リポジトリ | Acc@1 (NFKCなし) | Acc@1 (NFKC) | CER (NFKC) |
+|---|---|---|---|---|
+| jinen-v1-small  | [togatogah/jinen-v1-small](https://huggingface.co/togatogah/jinen-v1-small)   | 0.720 | 0.775 | 0.033 |
+| jinen-v1-xsmall | [togatogah/jinen-v1-xsmall](https://huggingface.co/togatogah/jinen-v1-xsmall) | 0.675 | 0.720 | 0.033 |
+
+## Usage
+
+### サンプルコード
+
+```python
+from transformers import AutoTokenizer, AutoModelForCausalLM
+import torch
+
+model_name = "togatogah/jinen-v1-xsmall"
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+model = AutoModelForCausalLM.from_pretrained(model_name, dtype=torch.bfloat16)
+model.eval()
+
+INPUT_START = "\uee00"
+OUTPUT_START = "\uee01"
+CONTEXT = "\uee02"
+
+# (コンテキスト, カタカナ入力) のペア
+prompts = [
+    # コンテキストなし
+    ("", "キョウハイイテンキデスネ"),           # => 今日はいい天気ですね
+    ("", "ローカルエルエルエムデニホンゴヘンカン"),  # => ローカルLLMで日本語変換
+    # コンテキストあり（同音異義語の区別）
+    ("歯が痛いので", "ハイシャ"),               # => 歯医者
+    ("車が壊れたので", "ハイシャ"),              # => 廃車
+    # 半角カタカナ（tokenizerのNFKC正規化により全角と同じ結果になる）
+    ("", "ｷｮｳﾊｲｲﾃﾝｷﾃﾞｽﾈ"),  # => 今日はいい天気ですね
+]
+
+for context, kana in prompts:
+    prompt = f"{CONTEXT}{context}{INPUT_START}{kana}{OUTPUT_START}"
+    inputs = tokenizer(prompt, return_tensors="pt")
+    with torch.no_grad():
+        outputs = model.generate(**inputs, max_new_tokens=128, do_sample=False, num_beams=1)
+    result = tokenizer.decode(outputs[0], skip_special_tokens=False)
+    converted = result.split(OUTPUT_START, 1)[-1].replace("</s>", "").strip()
+    print(f"{kana} => {converted}")
+```
+
+### GGUF
+
+GGUF形式のモデルも提供しています。
+
+- [jinen-v1-xsmall-f16.gguf](https://huggingface.co/togatogah/jinen-v1-xsmall/blob/main/jinen-v1-xsmall-f16.gguf) (FP16)
+- [jinen-v1-xsmall-Q5_K_M.gguf](https://huggingface.co/togatogah/jinen-v1-xsmall/blob/main/jinen-v1-xsmall-Q5_K_M.gguf) (Q5_K_M量子化)

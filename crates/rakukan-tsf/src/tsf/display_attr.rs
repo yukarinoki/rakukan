@@ -169,12 +169,12 @@ pub fn make_all() -> Vec<ITfDisplayAttributeInfo> {
         DisplayAttrInfo::new(
             GUID_DISPLAY_ATTRIBUTE_INPUT,
             DISPLAY_ATTRIBUTE_INPUT,
-            "Rakukan Input",
+            "yurukan Input",
         ),
         DisplayAttrInfo::new(
             GUID_DISPLAY_ATTRIBUTE,
             DISPLAY_ATTRIBUTE_CONVERTED,
-            "Rakukan Converted",
+            "yurukan Converted",
         ),
     ]
 }
@@ -186,14 +186,14 @@ pub fn get_by_guid(guid: &GUID) -> windows::core::Result<ITfDisplayAttributeInfo
         return Ok(DisplayAttrInfo::new(
             GUID_DISPLAY_ATTRIBUTE_INPUT,
             DISPLAY_ATTRIBUTE_INPUT,
-            "Rakukan Input",
+            "yurukan Input",
         ));
     }
     if *guid == GUID_DISPLAY_ATTRIBUTE {
         return Ok(DisplayAttrInfo::new(
             GUID_DISPLAY_ATTRIBUTE,
             DISPLAY_ATTRIBUTE_CONVERTED,
-            "Rakukan Converted",
+            "yurukan Converted",
         ));
     }
     Err(windows::core::Error::from(E_INVALIDARG))

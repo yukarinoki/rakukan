@@ -1,6 +1,6 @@
 # Third-Party Licenses
 
-This document lists the licenses of third-party software and data used by rakukan.
+This document lists the licenses of third-party software and data used by yurukan (a fork of rakukan).
 
 ---
 
@@ -80,20 +80,22 @@ SOFTWARE.
 - **Source:** https://github.com/google/mozc
 - **Files:** `src/data/dictionary_oss/dictionary*.txt`, `reading_correction.tsv`
 - **Usage:** Converted to `rakukan.dict` binary format and bundled in the installer
-- **License:** Apache License 2.0
+- **License:** Original Mozc terms: Google BSD, NAIST / ICOT notices and public domain data; see [the complete original license](licenses/MOZC-LICENSE.txt).
+- **Modification:** Text entries converted to the `rakukan.dict` binary dictionary.
 
-```
-Copyright (c) 2010-2024, Google Inc.
+## Models
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
+The installer includes jinen-v1-xsmall Q5_K_M and its tokenizer, from
+[togatogah/jinen-v1-xsmall](https://huggingface.co/togatogah/jinen-v1-xsmall),
+converted to GGUF by [togatogah](https://huggingface.co/togatogah/jinen-v1-xsmall.gguf).
+These files are redistributed unmodified under [CC BY-SA 4.0](licenses/CC-BY-SA-4.0.txt).
 
-    http://www.apache.org/licenses/LICENSE-2.0
+AI-mode Qwen GGUF models and the separate llama-server are optional downloads,
+not included in the installer. Their original licenses apply separately.
 
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-```
+## Binary dependencies
+
+The installer includes license files collected from the exact Cargo and NuGet
+packages used to build the release, including llama.cpp and the .NET / Windows
+App SDK notices, under `licenses/`. Mozc date conversion attribution is included
+as `licenses/MOZC-DATE-LICENSE.txt`.
