@@ -18,11 +18,11 @@ public sealed class AiConfig
 {
     public bool Enabled { get; set; }
     public string Key { get; set; } = "Henkan";
-    public string Backend { get; set; } = "copilot";
+    public string Backend { get; set; } = "local";
     public string Url { get; set; } = "http://127.0.0.1:8081/v1";
     public string Model { get; set; } = "";
-    public string ModelPath { get; set; } = "";
-    public string ServerPath { get; set; } = "";
+    public string ModelPath { get; set; } = AiDownload.DefaultFiles.ModelPath;
+    public string ServerPath { get; set; } = AiDownload.DefaultFiles.ServerPath;
     public int Port { get; set; } = 8081;
     public int TimeoutSeconds { get; set; } = 180;
     public int MaxTokens { get; set; } = 512;
@@ -37,13 +37,13 @@ public sealed class AiConfig
     public static string DirectoryPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "rakukan");
     public static string FilePath => Path.Combine(DirectoryPath, "ai.json");
     public static AiConfig Load() => File.Exists(FilePath) ? JsonSerializer.Deserialize<AiConfig>(File.ReadAllText(FilePath), Json) ?? new() : new();
-    public void Validate()
+    public void Validate(bool requireConnection = false)
     {
         if (Backend is not ("copilot" or "local" or "remote")) throw new ArgumentException("接続方式が不正です。");
         if (!ValidKey(Key)) throw new ArgumentException("AIキーは Henkan、F1〜F12、または Ctrl+Shift+A の形式で指定してください。");
         if (Port is < 1 or > 65535 || TimeoutSeconds is < 5 or > 600 || MaxTokens is < 16 or > 4096) throw new ArgumentException("ポート、待機時間、生成上限を確認してください。");
         if (Backend == "remote" && (!Uri.TryCreate(Url, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https") || !string.IsNullOrEmpty(uri.UserInfo))) throw new ArgumentException("接続先を http(s)://ホスト:ポート/v1 の形式で指定してください。");
-        if (Backend == "local" && (!File.Exists(ModelPath) || !File.Exists(ServerPath))) throw new ArgumentException("モデルと llama-server のファイルを指定してください。");
+        if (Backend == "local" && (Enabled || requireConnection) && (!File.Exists(ModelPath) || !File.Exists(ServerPath))) throw new ArgumentException("モデルと llama-server のファイルを指定してください。");
         if (Commands.Count == 0 || Commands.Any(c => string.IsNullOrWhiteSpace(c.Name) || string.IsNullOrWhiteSpace(c.Prompt))) throw new ArgumentException("コマンド名と指示文を入力してください。");
         var aliases = Commands.SelectMany(c => new[] { c.Name }.Concat(c.Aliases.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))).ToList();
         if (aliases.Distinct(StringComparer.OrdinalIgnoreCase).Count() != aliases.Count) throw new ArgumentException("コマンド名・別名が重複しています。");

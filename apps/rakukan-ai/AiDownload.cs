@@ -23,6 +23,8 @@ public static class AiDownload
     private const string ServerUrl = "https://github.com/ggml-org/llama.cpp/releases/download/b10869/llama-b10869-bin-win-cpu-x64.zip";
     public static string DirectoryPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "rakukan", "ai-local");
 
+    public static AiLocalFiles DefaultFiles => new(Path.Combine(DirectoryPath, Models[0].File), Path.Combine(DirectoryPath, "llama-" + ServerVersion, "llama-server.exe"));
+
     public static async Task<AiLocalFiles> InstallAsync(IProgress<AiDownloadProgress>? progress = null, CancellationToken ct = default, string modelId = "2b")
     {
         var offer = Models.SingleOrDefault(m => m.Id == modelId) ?? throw new ArgumentException("モデルを選択してください。");
