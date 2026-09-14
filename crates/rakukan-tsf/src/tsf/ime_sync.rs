@@ -30,6 +30,11 @@ pub fn apply(
     write_compartment: bool,
     source: &'static str,
 ) -> Option<ImeMode> {
+    let new = if new.allowed(&crate::engine::config::current_config().input) {
+        new
+    } else {
+        ImeMode::On
+    };
     let from = match crate::engine::state::ime_state_get() {
         Ok(mut st) => {
             let from = st.ime_mode;

@@ -82,3 +82,6 @@ docs/japanese-understanding/
 
 # Claude Code ワークツリー（ローカル専用）
 .claude/
+
+/output/
+.dotnet-cli/

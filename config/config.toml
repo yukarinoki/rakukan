@@ -43,6 +43,8 @@ layout = "jis"
 reload_on_mode_switch = true
 
 [input]
+half_katakana_mode_enabled = false
+full_alphanumeric_mode_enabled = false
 default_mode = "alphanumeric"
 remember_last_kana_mode = true
 # 数字の入力幅: "halfwidth" = 半角 (012), "fullwidth" = 全角 (０１２)
@@ -54,7 +56,7 @@ alpha_width = "fullwidth"
 symbol_width = "fullwidth"
 
 [live_conversion]
-enabled = false
+enabled = true
 debounce_ms = 80
 use_llm = false
 prefer_dictionary_first = true

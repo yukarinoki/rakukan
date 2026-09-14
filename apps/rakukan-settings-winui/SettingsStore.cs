@@ -79,7 +79,9 @@ internal sealed class SettingsData
     public string AlphaWidth { get; set; } = "fullwidth";
     public string SymbolWidth { get; set; } = "fullwidth";
     public bool AutoLearn { get; set; } = true;
-    public bool LiveEnabled { get; set; }
+    public bool HalfKatakanaModeEnabled { get; set; }
+    public bool FullAlphanumericModeEnabled { get; set; }
+    public bool LiveEnabled { get; set; } = true;
     public ulong DebounceMs { get; set; } = 80;
     public bool UseLlm { get; set; }
     public bool PreferDictionaryFirst { get; set; } = true;
@@ -222,6 +224,8 @@ internal sealed class SettingsStore
         reload_on_mode_switch = true
 
         [input]
+        half_katakana_mode_enabled = false
+        full_alphanumeric_mode_enabled = false
         default_mode = "off"
         remember_last_kana_mode = true
         digit_width = "halfwidth"
@@ -232,7 +236,7 @@ internal sealed class SettingsStore
         auto_learn = true
 
         [live_conversion]
-        enabled = false
+        enabled = true
         debounce_ms = 80
         use_llm = false
         prefer_dictionary_first = true
@@ -502,7 +506,9 @@ internal sealed class SettingsStore
             AlphaWidth = GetString(input, "alpha_width") ?? "fullwidth",
             SymbolWidth = GetString(input, "symbol_width") ?? "fullwidth",
             AutoLearn = GetBool(input, "auto_learn") ?? true,
-            LiveEnabled = GetBool(live, "enabled") ?? false,
+            HalfKatakanaModeEnabled = GetBool(input, "half_katakana_mode_enabled") ?? false,
+            FullAlphanumericModeEnabled = GetBool(input, "full_alphanumeric_mode_enabled") ?? false,
+            LiveEnabled = GetBool(live, "enabled") ?? true,
             DebounceMs = GetULong(live, "debounce_ms") ?? 80,
             UseLlm = GetBool(live, "use_llm") ?? false,
             PreferDictionaryFirst = GetBool(live, "prefer_dictionary_first") ?? true,
@@ -529,6 +535,8 @@ internal sealed class SettingsStore
         keyboard["layout"] = data.KeyboardLayout;
         keyboard["reload_on_mode_switch"] = data.ReloadOnModeSwitch;
 
+        input["half_katakana_mode_enabled"] = data.HalfKatakanaModeEnabled;
+        input["full_alphanumeric_mode_enabled"] = data.FullAlphanumericModeEnabled;
         input["default_mode"] = data.DefaultMode;
         input["remember_last_kana_mode"] = data.RememberLastKanaMode;
         input["digit_width"] = data.DigitWidth;

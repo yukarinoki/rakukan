@@ -198,6 +198,10 @@ pub enum DigitCandidateKind {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InputConfig {
+    #[serde(default)]
+    pub half_katakana_mode_enabled: bool,
+    #[serde(default)]
+    pub full_alphanumeric_mode_enabled: bool,
     #[serde(default = "default_ime_mode")]
     pub default_mode: DefaultImeMode,
     #[serde(default = "default_remember_last_kana_mode")]
@@ -232,6 +236,8 @@ fn default_auto_learn() -> bool {
 impl Default for InputConfig {
     fn default() -> Self {
         Self {
+            half_katakana_mode_enabled: false,
+            full_alphanumeric_mode_enabled: false,
             default_mode: default_ime_mode(),
             remember_last_kana_mode: true,
             digit_width: DigitWidth::default(),
@@ -251,6 +257,10 @@ fn default_prefer_dictionary_first() -> bool {
     true
 }
 
+fn default_live_conversion_enabled() -> bool {
+    true
+}
+
 fn default_live_conv_beam_size() -> usize {
     1
 }
@@ -261,7 +271,7 @@ fn default_live_conv_min_chars() -> usize {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LiveConversionConfig {
-    #[serde(default)]
+    #[serde(default = "default_live_conversion_enabled")]
     pub enabled: bool,
     #[serde(default = "default_debounce_ms")]
     pub debounce_ms: u64,
@@ -282,7 +292,7 @@ pub struct LiveConversionConfig {
 impl Default for LiveConversionConfig {
     fn default() -> Self {
         Self {
-            enabled: false,
+            enabled: true,
             debounce_ms: 80,
             use_llm: false,
             prefer_dictionary_first: true,
@@ -565,6 +575,8 @@ layout = "jis"
 reload_on_mode_switch = true
 
 [input]
+half_katakana_mode_enabled = false
+full_alphanumeric_mode_enabled = false
 # 起動時の IME 状態: "off" = 直接入力, "on" = かな漢字変換
 default_mode = "off"
 # 前回の IME オン/オフをアプリ（ウィンドウ）ごとに記憶する
@@ -584,7 +596,7 @@ digit_candidates_order = ["arabic", "fullwidth", "positional", "per_digit", "dai
 auto_learn = true
 
 [live_conversion]
-enabled = false
+enabled = true
 debounce_ms = 80
 use_llm = false
 prefer_dictionary_first = true
@@ -652,6 +664,17 @@ num_candidates = 12
         assert_eq!(cfg.effective_num_candidates(), 6);
         assert_eq!(cfg.live_conversion.beam_size, 1);
         assert_eq!(cfg.conversion.beam_size, 6);
+    }
+
+    #[test]
+    fn live_conversion_defaults_on_and_preserves_explicit_off() {
+        assert!(AppConfig::default().live_conversion.enabled);
+        for text in ["", "[live_conversion]", super::default_config_text()] {
+            let cfg: AppConfig = toml::from_str(text).unwrap();
+            assert!(cfg.live_conversion.enabled);
+        }
+        let cfg: AppConfig = toml::from_str("[live_conversion]\nenabled = false").unwrap();
+        assert!(!cfg.live_conversion.enabled);
     }
 
     #[test]

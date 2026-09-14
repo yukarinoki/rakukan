@@ -34,6 +34,8 @@ pub fn ime_mode_set_atomic(mode: ImeMode) {
     let v = match mode {
         ImeMode::On => 0u8,
         ImeMode::Off => 1u8,
+        ImeMode::HalfKatakana => 2u8,
+        ImeMode::FullAlphanumeric => 3u8,
     };
     IME_MODE_ATOMIC.store(v, AO::Release);
 }
@@ -43,6 +45,8 @@ pub fn ime_mode_set_atomic(mode: ImeMode) {
 pub fn ime_mode_get_atomic() -> ImeMode {
     match IME_MODE_ATOMIC.load(AO::Acquire) {
         1 => ImeMode::Off,
+        2 => ImeMode::HalfKatakana,
+        3 => ImeMode::FullAlphanumeric,
         _ => ImeMode::On,
     }
 }
@@ -1343,6 +1347,10 @@ fn candidate_views_from_strings(
 }
 
 impl SessionState {
+    pub fn is_idle(&self) -> bool {
+        matches!(self, Self::Idle)
+    }
+
     // ── BlockSelecting ──────────────────────────────────────────────────────
 
     pub fn set_block_selecting(&mut self, blocks: Vec<ConversionBlock>, full_reading: String) {

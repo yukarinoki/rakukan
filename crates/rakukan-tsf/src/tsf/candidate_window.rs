@@ -1025,7 +1025,7 @@ fn process_openclose_change() {
     };
     let new_mode = ImeMode::from_open(crate::tsf::language_bar::get_open_close(&tm));
     let current = crate::engine::state::ime_mode_get_atomic();
-    if new_mode == current {
+    if new_mode.is_on() == current.is_on() {
         return;
     }
     tracing::info!(

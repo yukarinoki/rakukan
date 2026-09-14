@@ -1,5 +1,5 @@
-; =============================================================================
-; rakukan IME - Inno Setup Installer Script
+﻿; =============================================================================
+; yurukan IME - Inno Setup Installer Script
 ; =============================================================================
 ; 使用方法:
 ;   1. Inno Setup 6 をインストール: https://jrsoftware.org/isinfo.php
@@ -13,14 +13,14 @@
 ;   dist\rakukan_engine_cuda.dll    (省略可)
 ;   dist\rakukan.dict
 ;   dist\config.toml
-;   dist\models\                    (省略可)
+;   dist\models\                    (jinen GGUF + tokenizer.json)
 ;
 ; =============================================================================
 
-#define MyAppName      "Rakukan IME"
-#define MyAppVersion   "0.11.4"
-#define MyAppPublisher "fukuyori"
-#define MyAppURL       "https://github.com/fukuyori/rakukan"
+#define MyAppName      "yurukan IME"
+#define MyAppVersion   "0.11.5"
+#define MyAppPublisher "yukarinoki"
+#define MyAppURL       "https://github.com/yukarinoki/yurukan"
 
 [Setup]
 AppId={{B7C4E2A1-3F8D-4C91-B5A0-D2E6F9183047}
@@ -48,13 +48,17 @@ SetupIconFile=dist\rakukan.ico
 
 ; 出力設定
 OutputDir=output
-OutputBaseFilename=rakukan-{#MyAppVersion}-setup
+OutputBaseFilename=yurukan-{#MyAppVersion}-setup
 Compression=lzma2/ultra64
 SolidCompression=yes
 InternalCompressLevel=ultra64
 
 ; UI設定
 WizardStyle=modern
+ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
+MinVersion=10.0.17763
+LicenseFile=dist\LICENSE
 
 ; 管理者権限を要求 (regsvr32 に必要)
 PrivilegesRequired=admin
@@ -78,10 +82,10 @@ Name: "japanese"; MessagesFile: "compiler:Languages\Japanese.isl"
 Name: "english";  MessagesFile: "compiler:Default.isl"
 
 [Messages]
-japanese.WelcomeLabel1=rakukan IME セットアップへようこそ
-japanese.WelcomeLabel2=このウィザードは rakukan IME をインストールします。%nWindows 日本語入力メソッドです。%n%nセットアップを続行するには [次へ] をクリックしてください。
-japanese.FinishedHeadingLabel=rakukan IME のインストール完了
-japanese.FinishedLabel=rakukan IME のインストールが完了しました。%n%n言語バーに表示されない場合は、一度サインアウトして再度ログインしてください。
+japanese.WelcomeLabel1=yurukan IME セットアップへようこそ
+japanese.WelcomeLabel2=このウィザードは yurukan IME をインストールします。%nWindows 日本語入力メソッドです。%n%nセットアップを続行するには [次へ] をクリックしてください。
+japanese.FinishedHeadingLabel=yurukan IME のインストール完了
+japanese.FinishedLabel=yurukan IME のインストールが完了しました。%n%n言語バーに表示されない場合は、一度サインアウトして再度ログインしてください。
 
 [Files]
 ; ----- アイコン -----
@@ -89,9 +93,6 @@ Source: "dist\rakukan.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 ; ----- TSF DLL -----
 Source: "dist\rakukan_tsf.dll"; DestDir: "{app}"; Flags: ignoreversion
-
-; ----- アイコン -----
-Source: "dist\rakukan.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 ; ----- Engine DLLs -----
 Source: "dist\rakukan_engine_cpu.dll";    DestDir: "{app}"; Flags: ignoreversion
@@ -104,8 +105,8 @@ Source: "dist\rakukan_engine_cuda.dll";   DestDir: "{app}"; Flags: ignoreversion
 Source: "dist\rakukan-engine-host.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 ; ----- Settings GUI (WinUI 3) -----
-Source: "dist\ai\*"; DestDir: "{app}\ai"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
-Source: "dist\settings-ui\*"; DestDir: "{app}\settings-ui"; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
+Source: "dist\ai\*"; DestDir: "{app}\ai"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "dist\settings-ui\*"; DestDir: "{app}\settings-ui"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 ; ----- 辞書 -----
 Source: "dist\rakukan.dict"; DestDir: "{app}\dict"; Flags: ignoreversion
@@ -115,13 +116,18 @@ Source: "dist\rakukan.dict"; DestDir: "{app}\dict"; Flags: ignoreversion
 Source: "dist\config.toml"; DestDir: "{code:GetRoamingConfigDir}"; Flags: onlyifdoesntexist uninsneveruninstall
 
 ; ----- LLM モデル (省略可) -----
-Source: "dist\models\*"; DestDir: "{app}\models"; Flags: ignoreversion recursesubdirs skipifsourcedoesntexist
+Source: "dist\models\jinen-v1-xsmall-Q5_K_M.gguf"; DestDir: "{code:GetModelCacheDir}"; Flags: onlyifdoesntexist uninsneveruninstall
+Source: "dist\models\tokenizer.json"; DestDir: "{code:GetModelCacheDir}"; Flags: onlyifdoesntexist uninsneveruninstall
 
 ; ----- TIP 登録スクリプト -----
 Source: "dist\register-tip.ps1";   DestDir: "{app}"; Flags: ignoreversion
 Source: "dist\unregister-tip.ps1"; DestDir: "{app}"; Flags: ignoreversion
 
 ; ----- ライセンス・帰属表示 -----
+Source: "dist\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
+Source: "dist\licenses\*"; DestDir: "{app}\licenses"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "dist\manifest.json"; DestDir: "{app}"; Flags: ignoreversion
+Source: "dist\sources.json"; DestDir: "{app}"; Flags: ignoreversion
 Source: "dist\NOTICE";                  DestDir: "{app}"; Flags: ignoreversion
 Source: "dist\THIRD_PARTY_LICENSES.md"; DestDir: "{app}"; Flags: ignoreversion
 
@@ -137,12 +143,12 @@ Filename: "{sys}\regsvr32.exe"; \
 Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
     Parameters: "-ExecutionPolicy Bypass -File ""{app}\register-tip.ps1"""; \
     Flags: postinstall runhidden waituntilterminated; \
-    StatusMsg: "キーボードリストに rakukan を追加中..."; \
-    Description: "キーボードリストに rakukan を追加する"
+    StatusMsg: "キーボードリストに yurukan を追加中..."; \
+    Description: "キーボードリストに yurukan を追加する"
 
 ; ----- HKCU へ TIP キーをミラー (Windows 11 対応) -----
 Filename: "{sys}\reg.exe"; \
-    Parameters: "COPY ""HKLM\Software\Microsoft\CTF\TIP"" ""HKCU\Software\Microsoft\CTF\TIP"" /s /f"; \
+    Parameters: "COPY ""HKLM\Software\Microsoft\CTF\TIP\{{C0DDF8B0-1F1E-4C2D-A9E3-5F7B8D6E2A4C}"" ""HKCU\Software\Microsoft\CTF\TIP\{{C0DDF8B0-1F1E-4C2D-A9E3-5F7B8D6E2A4C}"" /s /f"; \
     Flags: runhidden waituntilterminated; \
     StatusMsg: "入力メソッド設定を反映中..."
 
@@ -161,7 +167,7 @@ Filename: "{sys}\regsvr32.exe"; \
 
 ; ----- HKCU の TIP キーを削除 -----
 Filename: "{sys}\reg.exe"; \
-    Parameters: "DELETE ""HKCU\Software\Microsoft\CTF\TIP"" /f"; \
+    Parameters: "DELETE ""HKCU\Software\Microsoft\CTF\TIP\{{C0DDF8B0-1F1E-4C2D-A9E3-5F7B8D6E2A4C}"" /f"; \
     Flags: runhidden waituntilterminated; \
     RunOnceId: "CleanupHKCUTip"
 
@@ -184,6 +190,11 @@ Type: filesandordirs; Name: "{app}\dict"
 // PrivilegesRequired=admin で UAC 昇格すると {localappdata} が
 // 管理者アカウントのパスになるため、USERPROFILE から組み立てる。
 // =========================================================================
+
+function GetModelCacheDir(Param: String): String;
+begin
+  Result := GetEnv('USERPROFILE') + '\.cache\huggingface\hub\models--togatogah--jinen-v1-xsmall.gguf\snapshots\main';
+end;
 
 function GetUserLocalAppData(): String;
 var
@@ -230,7 +241,7 @@ var
 begin
   // 64-bit チェック
   if not IsWin64 then begin
-    MsgBox('rakukan IME は 64-bit Windows でのみ動作します。', mbError, MB_OK);
+    MsgBox('yurukan IME は 64-bit Windows でのみ動作します。', mbError, MB_OK);
     Result := False;
     Exit;
   end;
@@ -334,9 +345,9 @@ begin
     'インストールに失敗しました。' + #13#10 + #13#10 +
     '前のバージョンに戻しました。引き続きご使用いただけます。' + #13#10 + #13#10 +
     '【原因】' + #13#10 +
-    '  rakukan の DLL が使用中のためコピーできませんでした。' + #13#10 + #13#10 +
+    '  yurukan の DLL が使用中のためコピーできませんでした。' + #13#10 + #13#10 +
     '【再インストールの手順】' + #13#10 +
-    '  1. 言語バーで rakukan 以外の IME（例：Microsoft IME）に切り替える' + #13#10 +
+    '  1. 言語バーで yurukan 以外の IME（例：Microsoft IME）に切り替える' + #13#10 +
     '  2. ［スタート］→ アカウント名 → ［サインアウト］を選択する' + #13#10 +
     '  3. 再度サインインする' + #13#10 +
     '  4. インストーラーを再度実行する' + #13#10 + #13#10 +
@@ -415,12 +426,6 @@ begin
   OldDll := GetUserLocalAppData() + '\rakukan\rakukan_tsf.dll';
   if not FileExists(OldDll) then Exit; // 初回インストール：チェック不要
 
-  // regsvr32 /u で登録解除を先行実行
-  Exec(ExpandConstant('{sys}\regsvr32.exe'),
-       '/s /u "' + OldDll + '"',
-       '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  Sleep(1500);
-
   // リネームでロック確認（最大3回）
   TempFile := OldDll + '.bak_setup';
   Locked := True;
@@ -435,9 +440,9 @@ begin
 
   if Locked then begin
     MsgBox(
-      'rakukan の DLL が使用中のため、このままではインストールできません。' + #13#10 + #13#10 +
+      'yurukan の DLL が使用中のため、このままではインストールできません。' + #13#10 + #13#10 +
       '【対処方法】' + #13#10 +
-      '  1. 言語バーで rakukan 以外の IME（例：Microsoft IME）に切り替える' + #13#10 +
+      '  1. 言語バーで yurukan 以外の IME（例：Microsoft IME）に切り替える' + #13#10 +
       '  2. ［スタート］→ アカウント名 → ［サインアウト］を選択する' + #13#10 +
       '  3. 再度サインインしてからインストーラーを再実行する' + #13#10 + #13#10 +
       '※ PC の再起動は不要です。サインアウト→サインインで解決します。' + #13#10 + #13#10 +

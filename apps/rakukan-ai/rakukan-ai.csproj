@@ -4,6 +4,8 @@
     <TargetFramework>net8.0-windows</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <Version>0.11.5</Version>
+    <Product>yurukan AI</Product>
     <AssemblyName>rakukan-ai</AssemblyName>
   </PropertyGroup>
 </Project>

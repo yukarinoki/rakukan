@@ -7,6 +7,17 @@ void Check(bool condition, string message) { if (!condition) throw new Exception
 string FileAt(string name) => Path.Combine(directory, name);
 try
 {
+    Check(SettingsStore.LoadConfig(Tomlyn.Toml.ToModel("")).LiveEnabled, "live default on");
+    Check(!SettingsStore.LoadConfig(Tomlyn.Toml.ToModel("[live_conversion]\nenabled=false")).LiveEnabled, "saved live off preserved");
+
+    var optionalRoot = Tomlyn.Toml.ToModel("");
+    var optional = SettingsStore.LoadConfig(optionalRoot);
+    Check(!optional.HalfKatakanaModeEnabled && !optional.FullAlphanumericModeEnabled, "optional modes off by default");
+    optional.HalfKatakanaModeEnabled = true;
+    optional.FullAlphanumericModeEnabled = true;
+    SettingsStore.SaveConfig(optionalRoot, optional);
+    var optionalReload = SettingsStore.LoadConfig(optionalRoot);
+    Check(optionalReload.HalfKatakanaModeEnabled && optionalReload.FullAlphanumericModeEnabled, "optional modes saved");
     var keymapRoot = Tomlyn.Toml.ToModel("""
         preset = "ms-ime-jis"
         inherit_preset = true

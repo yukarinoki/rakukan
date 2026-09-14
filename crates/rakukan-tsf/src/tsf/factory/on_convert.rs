@@ -219,7 +219,7 @@ impl super::TextServiceFactory_Impl {
             use crate::engine::ime_mode::ImeMode;
             drop(guard);
             match crate::engine::state::ime_mode_get_atomic() {
-                ImeMode::On => {
+                ImeMode::On | ImeMode::HalfKatakana | ImeMode::FullAlphanumeric => {
                     commit_text(ctx, tid, "　".into())?;
                     return Ok(true);
                 }

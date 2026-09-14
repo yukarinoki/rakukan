@@ -1,25 +1,30 @@
-/// IME のオン/オフ。
-///
-/// rakukan の入力状態はこの 2 値だけで表す。「ひらがなモード」「英数モード」という
-/// 独立した概念は持たない。
-///
-/// - `On`  : かな漢字変換。TSF コンパートメント `KEYBOARD_OPENCLOSE` は「開」。
-/// - `Off` : 直接入力（キーをアプリへそのまま渡す）。同コンパートメントは「閉」。
-///
-/// 内部状態（`IMEState::ime_mode` とそのアトミック鏡）が唯一の正で、
-/// コンパートメントは常にここから導出して書く。表示（言語バー、インジケーター、
-/// トレイ通知）もコンパートメントではなく内部状態を見る。
+/// IME state. Optional half-width katakana and full-width alphanumeric modes
+/// are enabled individually in InputConfig; both keep KEYBOARD_OPENCLOSE open.
 #[derive(Default, Copy, Clone, PartialEq, Eq, Debug)]
 pub enum ImeMode {
     #[default]
     On,
     Off,
+    HalfKatakana,
+    FullAlphanumeric,
 }
 
 impl ImeMode {
+    pub fn is_direct(self) -> bool {
+        matches!(self, Self::HalfKatakana | Self::FullAlphanumeric)
+    }
+
+    pub fn allowed(self, input: &super::config::InputConfig) -> bool {
+        match self {
+            Self::HalfKatakana => input.half_katakana_mode_enabled,
+            Self::FullAlphanumeric => input.full_alphanumeric_mode_enabled,
+            _ => true,
+        }
+    }
+
     #[inline]
     pub fn is_on(self) -> bool {
-        matches!(self, Self::On)
+        !matches!(self, Self::Off)
     }
 
     /// コンパートメント値（開=true）から変換する。
@@ -31,7 +36,7 @@ impl ImeMode {
     #[inline]
     pub fn toggled(self) -> Self {
         match self {
-            Self::On => Self::Off,
+            Self::On | Self::HalfKatakana | Self::FullAlphanumeric => Self::Off,
             Self::Off => Self::On,
         }
     }
@@ -41,6 +46,8 @@ impl ImeMode {
         match self {
             Self::On => "あ",
             Self::Off => "A",
+            Self::HalfKatakana => "ｶ",
+            Self::FullAlphanumeric => "Ａ",
         }
     }
 
@@ -49,6 +56,8 @@ impl ImeMode {
         match self {
             Self::On => "On",
             Self::Off => "Off",
+            Self::HalfKatakana => "HalfKatakana",
+            Self::FullAlphanumeric => "FullAlphanumeric",
         }
     }
 }

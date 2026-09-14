@@ -46,7 +46,7 @@ fn launch_settings_app_inner() -> Result<()> {
 fn show_error(message: &str) {
     unsafe {
         let text = to_wide_z(message);
-        let caption = to_wide_z("rakukan");
+        let caption = to_wide_z("yurukan");
         let _ = MessageBoxW(
             GetForegroundWindow(),
             PCWSTR(text.as_ptr()),
