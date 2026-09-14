@@ -138,7 +138,7 @@ public sealed partial class MainWindow
         {
             Enabled = AiEnabled.IsOn,
             Key = AiKey.Text.Trim(),
-            Backend = (AiBackendCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "copilot",
+            Backend = (AiBackendCombo.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "local",
             Url = AiUrl.Text.Trim(),
             ServerPath = AiServerPath.Text.Trim().Trim('"'),
             ModelPath = AiModelPath.Text.Trim().Trim('"'),

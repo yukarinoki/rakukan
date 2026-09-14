@@ -9,6 +9,14 @@ int passed = 0;
 void Check(bool ok, string label) { if (!ok) throw new Exception(label); passed++; }
 async Task Throws(Func<Task> action, string label) { try { await action(); } catch { passed++; return; } throw new Exception(label); }
 var cfg = new AiConfig(); cfg.Validate();
+Check(!cfg.Enabled && cfg.Backend == "local" && cfg.ModelPath == AiDownload.DefaultFiles.ModelPath && cfg.ServerPath == AiDownload.DefaultFiles.ServerPath, "Default AI is off and points to the lightweight GGUF and CPU runtime");
+var missingLocal = new AiConfig { ModelPath = "missing-model.gguf", ServerPath = "missing-server.exe" };
+missingLocal.Validate();
+await Throws(() => { missingLocal.Validate(requireConnection: true); return Task.CompletedTask; }, "Connection checks reject missing downloads even when AI is off");
+missingLocal.Enabled = true;
+await Throws(() => { missingLocal.Validate(); return Task.CompletedTask; }, "Enabling requires downloaded local files");
+var savedCopilot = JsonSerializer.Deserialize<AiConfig>("{\"enabled\":true,\"backend\":\"copilot\"}", AiConfig.Json)!;
+Check(savedCopilot.Enabled && savedCopilot.Backend == "copilot", "Existing explicit backend and enabled state are preserved");
 var translated = AiBackend.Resolve(cfg, new() { Text = "元の文", Instruction = "えいご" });
 Check(!translated.Append && translated.Language == "english" && translated.Prompt.Contains("Translate"), "English alias resolves language and replacement");
 using var copilotRequest = JsonDocument.Parse(JsonSerializer.Serialize(AiBackend.CopilotRequest("id", "文章", "Translate", "english")));

@@ -55,7 +55,7 @@ public static class AiBackend
 
     public static async Task<AiResult> RunAsync(AiRequest req, CancellationToken cancellation = default)
     {
-        var cfg = req.Config ?? AiConfig.Load(); cfg.Validate();
+        var cfg = req.Config ?? AiConfig.Load(); cfg.Validate(requireConnection: true);
         if (req.Text.Length > 16384 || req.Instruction.Length > 8192 || req.Previous.Length > 32768) throw new ArgumentException("文章または指示が長すぎます。");
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
         timeout.CancelAfter(TimeSpan.FromSeconds(cfg.TimeoutSeconds));
