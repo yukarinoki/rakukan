@@ -1,6 +1,7 @@
 param(
     [string]$BuildDir = 'C:\rb',
-    [string]$IsccPath = 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
+    [string]$IsccPath = 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe',
+    [string[]]$IsccExtraArgs = @()
 )
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path $PSScriptRoot -Parent
@@ -35,7 +36,7 @@ try {
         @{ path = [IO.Path]::GetRelativePath($dist, $_.FullName); sha256 = (Get-FileHash $_.FullName).Hash; size = $_.Length }
     }
     @{ version = $version; commit = (git rev-parse HEAD); files = @($files) } | ConvertTo-Json -Depth 4 | Set-Content "$dist\manifest.json" -Encoding utf8
-    & $IsccPath rakukan_installer.iss
+    & $IsccPath @IsccExtraArgs rakukan_installer.iss
     if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed' }
     $installer = "$repoRoot\output\yurukan-$version-setup.exe"
     $hash = (Get-FileHash $installer).Hash.ToLowerInvariant()
